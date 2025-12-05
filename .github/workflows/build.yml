@@ -13,6 +13,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
 
+    - name: Setup Java
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
@@ -20,22 +26,25 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install -r requirements.txt
+        python -m pip install --upgrade pip
+        # 修改点1：告诉它去 StudyApp 文件夹里找 requirements.txt
+        pip install -r StudyApp/requirements.txt
         pip install flet
 
     - name: Setup Flutter
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.24.0' # 使用较新的 Flutter 版本
+        flutter-version: '3.24.0'
 
     - name: Build APK
       run: |
-        # 使用 flet build 命令生成 APK
-        # 如果你有 assets/icon.png，Flet 会自动识别作为图标
+        # 修改点2：先进入 StudyApp 文件夹，再开始打包
+        cd StudyApp
         flet build apk --verbose
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: app-release
-        path: build/apk/app-release.apk
+        name: StudyApp-Release
+        # 修改点3：告诉它生成的 APK 也在 StudyApp 文件夹深处
+        path: StudyApp/build/apk/app-release.apk
