@@ -16,7 +16,7 @@ class StudyLogic:
     def __init__(self):
         self.data_file = 'station_data.json'
         self.data = {
-            "target_name": "任务",
+            "target_name": "考研",
             "target_date": "2026-12-21",
             "city": "郑州",
             "focus_min": 25,
@@ -76,7 +76,6 @@ class StudyLogic:
             count = 1
             for t in self.data["tasks"]:
                 if t.startswith(today_str): count += 1
-            # 加一点可爱的装饰
             decor = random.choice(["✨", "🐾", "📌", "🐟", "⭐"])
             self.data["tasks"].append(f"{today_str} {decor} {count}. {text}")
             self.save_data()
@@ -129,7 +128,12 @@ class StudyLogic:
 
     def get_random_quote(self):
         quotes = [
-            "我所坚信的\n科技不是高高在上\n而是服务于人民"
+            "山顶的风景\n只有爬上去的猫才能看见",
+            "关关难过关关过\n小鱼干会有的",
+            "乾坤未定\n你我皆是黑马(猫)",
+            "耐得住寂寞\n才能守得住罐头",
+            "星光不问赶路喵",
+            "只要步履不停\n我们就终将抵达"
         ]
         return random.choice(quotes)
 
@@ -153,12 +157,13 @@ class StudyLogic:
 def main(page: ft.Page):
     page.window_width = 390
     page.window_height = 844
-    page.title = "任务助手"
+    page.title = "上岸助手"
     page.theme_mode = ft.ThemeMode.LIGHT
 
     THEME = {
         "bg": "#FFCCCC", "fg": "#D24D57", "comp_bg": "#FAEBD7",
-        "green": "#4CAF50", "white": "#FFFFFF", "red": "#FF5252"
+        "green": "#4CAF50", "white": "#FFFFFF", "red": "#FF5252",
+        "card_bg": "#FFF8F0"
     }
     page.bgcolor = THEME["bg"]
     page.padding = 0
@@ -169,31 +174,33 @@ def main(page: ft.Page):
     is_break_mode = False
     end_timestamp = 0
 
-    # 🐱 海量猫猫表情库
     emojis = {
-        "idle": [
-            "( =ω=)..zzZ", "(=^･ω･^=)", "ฅ(ﾐ・ﻌ・ﾐ)ฅ",
-            "( -ω-)..zzZ", "(=ﾟωﾟ)ﾉ", "｡^‿^｡",
-            "(=^･^=)", "Zzz..(ˇ㉨ˇ๑)"
-        ],
-        "work": [
-            "( * >ω<)p", "q(>ω< * )", "φ(．．;)",
-            "(ง •̀_•́)ง", "(=｀ω´=)", "( •̀ω•́ )σ",
-            "🖊️(･ω･ )", "(;･∀･)"
-        ],
-        "break": [
-            "( ~ o ~ )~", "旦_(^O^ )", "(=^ ◡ ^=)",
-            "☕(・ω・)", "(´• ω •`)ﾉ", "♪～(´ε｀ )"
-        ],
-        "happy": [
-            "(≧◡≦) ♡", "(=^･^=)♪", "(/ =ω=)/",
-            "♡( ◡‿◡ )", "(ﾉ´ヮ`)ﾉ*: ･ﾟ", "o(>ω<)o"
-        ]
+        "idle": ["( =ω=)..zzZ", "(=^･ω･^=)", "ฅ(ﾐ・ﻌ・ﾐ)ฅ", "( -ω-)..zzZ", "(=ﾟωﾟ)ﾉ"],
+        "work": ["( * >ω<)p", "q(>ω< * )", "φ(．．;)", "(ง •̀_•́)ง"],
+        "break": ["( ~ o ~ )~", "旦_(^O^ )", "(=^ ◡ ^=)", "☕(・ω・)"],
+        "happy": ["(≧◡≦) ♡", "(=^･^=)♪", "(/ =ω=)/", "o(>ω<)o"]
     }
 
     # 🎵 音频
     audio_alarm = flet_audio.Audio(src="alarm.mp3", autoplay=False)
     page.overlay.append(audio_alarm)
+
+    # ==========================
+    # 🌟 统一水印组件生成器 (新)
+    # ==========================
+    def get_watermark():
+        return ft.Container(
+            content=ft.Text(
+                "Created by lian  陪你一同完成\n"
+                "科技不是高高在上 \n而是服务于人民",  # <--- 在这里修改你的名字
+                size=10,
+                color=THEME["fg"],
+                opacity=0.5,  # 半透明
+                text_align="center"
+            ),
+            padding=ft.padding.only(top=20, bottom=10),
+            alignment=ft.alignment.center
+        )
 
     # ==========================
     # 辅助函数
@@ -225,9 +232,7 @@ def main(page: ft.Page):
     def checkin_click(e):
         success, msg = logic.check_in()
         refresh_checkin_ui()
-        # 签到成功猫猫会开心
-        if success:
-            txt_cat.value = random.choice(emojis["happy"])
+        if success: txt_cat.value = random.choice(emojis["happy"])
         page.snack_bar = ft.SnackBar(ft.Text(msg), open=True)
         page.update()
 
@@ -257,25 +262,65 @@ def main(page: ft.Page):
     txt_tomato_stats = ft.Text(f"今日投喂: {get_tomato_str()}", color=THEME["fg"], size=14)
     txt_slogan = ft.Text(logic.get_random_quote(), italic=True, text_align="center", color=THEME["fg"], size=14)
 
-    # 🐱 互动猫猫组件
     txt_cat = ft.Text(random.choice(emojis["idle"]), size=32, weight="bold", color=THEME["fg"])
 
-    # 点击猫猫的逻辑
     def pet_the_cat(e):
         txt_cat.value = random.choice(emojis["happy"])
         txt_cat.update()
         page.snack_bar = ft.SnackBar(ft.Text("呼噜噜... (被摸得很舒服) 🐾"), open=True)
         page.update()
 
-    container_cat = ft.Container(
-        content=txt_cat,
-        on_click=pet_the_cat,  # <--- 绑定点击事件
-        padding=10,
-        border_radius=10,
-        ink=True,  # 点击水波纹效果
-        tooltip="摸摸头"
-    )
+    container_cat = ft.Container(content=txt_cat, on_click=pet_the_cat, padding=10, border_radius=10, ink=True,
+                                 tooltip="摸摸头")
 
+    # ==========================
+    # ✨ 分享卡片
+    # ==========================
+    def open_share_card(e):
+        today_date = datetime.now().strftime("%Y年%m月%d日")
+        weekday = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][datetime.now().weekday()]
+        tomato_count = logic.data["tomatoes"]
+        focus_minutes = tomato_count * logic.data["focus_min"]
+
+        poster_content = ft.Container(
+            bgcolor=THEME["card_bg"], padding=30, border_radius=20, width=300, height=450,
+            border=ft.border.all(4, THEME["fg"]),
+            content=ft.Column([
+                ft.Row([ft.Text(f"{today_date} {weekday}", color="grey", size=14)], alignment="center"),
+                ft.Divider(color=THEME["fg"], thickness=1),
+                ft.Container(height=20),
+                ft.Text("今日专注", size=16, color=THEME["fg"]),
+                ft.Text(f"{tomato_count}", size=80, weight="bold", color=THEME["fg"], font_family="Impact"),
+                ft.Text(f"个番茄 ({focus_minutes}分钟)", size=14, color="grey"),
+                ft.Container(height=20),
+                ft.Text(random.choice(emojis["happy"]), size=40, color=THEME["fg"]),
+                ft.Container(height=20),
+                ft.Container(
+                    content=ft.Text(txt_slogan.value, italic=True, text_align="center", color=THEME["fg"], size=14),
+                    padding=10),
+                ft.Container(expand=True),
+                ft.Divider(color=THEME["fg"], thickness=1),
+                ft.Row([ft.Icon("school", color=THEME["fg"], size=20),
+                        ft.Text("上岸助手 APP", weight="bold", color=THEME["fg"])], alignment="center")
+            ], horizontal_alignment="center")
+        )
+
+        dlg_share = ft.AlertDialog(
+            content=ft.Column([
+                poster_content,
+                ft.Container(height=10),
+                ft.Text("✨ 截图分享给研友 ✨", color="white", size=12, text_align="center"),
+                ft.IconButton(icon="close", icon_color="white", on_click=lambda e: page.close(dlg_share))
+            ], tight=True, horizontal_alignment="center"),
+            bgcolor="transparent", modal=True,
+        )
+        page.open(dlg_share)
+
+    btn_share = ft.IconButton(icon="share", icon_color=THEME["fg"], tooltip="生成打卡海报", on_click=open_share_card)
+
+    # ==========================
+    # 计时器逻辑
+    # ==========================
     def format_time(seconds):
         if seconds < 0: seconds = 0
         return f"{seconds // 60:02}:{seconds % 60:02}"
@@ -348,12 +393,15 @@ def main(page: ft.Page):
 
     btn_start.on_click = toggle_timer
 
+    # 首页布局
     view_home = ft.Container(padding=20, content=ft.Column([
         ft.Container(height=10), txt_weather, ft.Container(height=10), btn_checkin,
         ft.Container(height=20), container_countdown, ft.Container(height=20),
         txt_timer_title, txt_timer, btn_start, ft.Container(height=10),
-        txt_tomato_stats, ft.Container(height=20), txt_slogan,
-        ft.Container(height=30), container_cat  # 这里放的是可互动的猫猫
+        ft.Row([txt_tomato_stats, btn_share], alignment="center"),
+        ft.Container(height=20), txt_slogan,
+        ft.Container(height=30), container_cat,
+        get_watermark()  # <--- 首页水印
     ], horizontal_alignment="center", scroll="auto"))
 
     # ==========================
@@ -412,15 +460,10 @@ def main(page: ft.Page):
     txt_input_task = ft.TextField(hint_text="输入任务...", expand=True, bgcolor=THEME["comp_bg"], color=THEME["fg"],
                                   border_color=THEME["fg"], text_size=14, content_padding=10)
 
-    # 🐾 空状态展示
-    empty_state = ft.Container(
-        content=ft.Column([
-            ft.Text("( =ω=)..zzZ", size=40, color="grey"),
-            ft.Text("暂无任务，捉只蝴蝶吧~ 🦋", color="grey")
-        ], horizontal_alignment="center", alignment=ft.MainAxisAlignment.CENTER),
-        alignment=ft.alignment.center,
-        padding=40
-    )
+    empty_state = ft.Container(content=ft.Column(
+        [ft.Text("( =ω=)..zzZ", size=40, color="grey"), ft.Text("暂无任务，捉只蝴蝶吧~ 🦋", color="grey")],
+        horizontal_alignment="center", alignment=ft.MainAxisAlignment.CENTER), alignment=ft.alignment.center,
+                               padding=40)
 
     def render_tasks():
         lv_tasks.controls.clear()
@@ -449,13 +492,15 @@ def main(page: ft.Page):
     render_events()
     render_tasks()
 
+    # 清单页布局
     view_todo = ft.Container(padding=20, content=ft.Column([
         ft.Row([ft.Text("待办清单 🐾", size=24, weight="bold", color=THEME["fg"]),
                 ft.IconButton(icon="alarm_add", icon_color=THEME["fg"], tooltip="添加倒计时",
                               on_click=open_add_event_dialog)], alignment="space_between"),
         lv_events, ft.Divider(color=THEME["fg"], thickness=1),
         ft.Container(content=lv_tasks, expand=True, bgcolor=THEME["bg"]),
-        ft.Row([txt_input_task, ft.IconButton("add", icon_color=THEME["fg"], on_click=add_task_e)])
+        ft.Row([txt_input_task, ft.IconButton("add", icon_color=THEME["fg"], on_click=add_task_e)]),
+        get_watermark()  # <--- 清单页水印
     ]))
 
     # ==========================
@@ -505,13 +550,15 @@ def main(page: ft.Page):
                                     color=THEME["fg"], width=390)
     btn_clear = ft.TextButton("🗑️ 清空今日投喂", on_click=clear_stats_e, style=ft.ButtonStyle(color=THEME["fg"]))
 
+    # 设置页布局
     view_settings = ft.Container(padding=20, content=ft.Column([
         ft.Text("设置 ⚙️", size=24, weight="bold", color=THEME["fg"]),
         ft.Container(height=10), input_name, input_date, input_city, input_focus, input_break,
         ft.Container(height=10),
         ft.ElevatedButton("保存喵", on_click=save_settings, bgcolor=THEME["comp_bg"], color=THEME["fg"], width=100),
         ft.Divider(color=THEME["fg"]), btn_history, ft.Container(height=20),
-        ft.Container(content=btn_clear, alignment=ft.alignment.center)
+        ft.Container(content=btn_clear, alignment=ft.alignment.center),
+        get_watermark()  # <--- 设置页水印
     ], scroll="auto"))
 
     def nav_change(e):
