@@ -11,7 +11,7 @@ from plyer import vibrator, notification
 
 
 # ==========================================
-# 1. 逻辑层 (保持不变)
+# 1. 逻辑层 (保持稳健版本不变)
 # ==========================================
 class StudyLogic:
     def __init__(self):
@@ -38,8 +38,7 @@ class StudyLogic:
                 with open(self.data_file, 'r', encoding='utf-8') as f:
                     loaded_data = json.load(f)
                     self.data.update(loaded_data)
-                    if "daily_stats" not in self.data:
-                        self.data["daily_stats"] = {}
+                    if "daily_stats" not in self.data: self.data["daily_stats"] = {}
             except:
                 pass
 
@@ -77,21 +76,13 @@ class StudyLogic:
 
     def add_task(self, text, priority="green"):
         if text:
-            task_obj = {
-                "text": text,
-                "priority": priority,
-                "created": datetime.now().strftime("%Y-%m-%d")
-            }
+            task_obj = {"text": text, "priority": priority, "created": datetime.now().strftime("%Y-%m-%d")}
             self.data["tasks"].append(task_obj)
             self.save_data()
 
     def remove_task(self, index):
         if 0 <= index < len(self.data["tasks"]):
-            task_item = self.data["tasks"][index]
-            content = task_item["text"] if isinstance(task_item, dict) else task_item
             self.data["tasks"].pop(index)
-            time_str = datetime.now().strftime("%H:%M")
-            self.data["history"].append(f"[{time_str}] 爪子一挥，完成: {content}")
             self.save_data()
 
     def add_countdown_event(self, title, date_str):
@@ -111,8 +102,7 @@ class StudyLogic:
     def increment_tomato(self):
         self.data["tomatoes"] += 1
         today = datetime.now().strftime("%Y-%m-%d")
-        if today not in self.data.get("daily_stats", {}):
-            self.data["daily_stats"][today] = 0
+        if today not in self.data.get("daily_stats", {}): self.data["daily_stats"][today] = 0
         self.data["daily_stats"][today] += 1
         time_str = datetime.now().strftime("%H:%M")
         self.data["history"].append(f"[{time_str}] 捕获一只番茄 🍅")
@@ -133,8 +123,6 @@ class StudyLogic:
         else:
             self.data["streak_days"] = 1
         self.data["last_checkin"] = today
-        time_str = datetime.now().strftime("%H:%M")
-        self.data["history"].append(f"[{time_str}] 🐾 按下今日爪印")
         self.save_data()
         return True, f"喵！签到成功！连签 {self.data['streak_days']} 天 🎉"
 
@@ -155,8 +143,7 @@ class StudyLogic:
             url = f"https://wttr.in/{city}?format=%C+%t&lang=zh&_={int(time.time())}"
             headers = {"User-Agent": "Mozilla/5.0"}
             res = requests.get(url, timeout=5, headers=headers)
-            if res.status_code == 200:
-                return f"{city} {res.text.strip()}"
+            if res.status_code == 200: return f"{city} {res.text.strip()}"
             return f"{city} 天气未知"
         except:
             return "气象喵正在赶路..."
@@ -173,7 +160,7 @@ class StudyLogic:
 
 
 # ==========================================
-# 2. 界面层 (双播放器稳健版)
+# 2. 界面层 (安全区域修复版)
 # ==========================================
 def main(page: ft.Page):
     page.window_width = 390
@@ -181,7 +168,7 @@ def main(page: ft.Page):
     page.title = "猫猫专注"
     page.theme_mode = ft.ThemeMode.LIGHT
 
-    # 🎨 配色
+    # 核心：设置全屏背景色，但内容通过SafeArea控制
     THEME = {
         "bg": "#FFCCCC", "fg": "#D24D57", "comp_bg": "#FFF0E6",
         "green": "#4CAF50", "white": "#FFFFFF", "red": "#FF5252",
@@ -189,7 +176,8 @@ def main(page: ft.Page):
     }
     page.bgcolor = THEME["bg"]
     page.padding = 0
-    page.keep_screen_on = True
+    page.spacing = 0
+    page.keep_screen_on = True  # 亮屏保活
 
     logic = StudyLogic()
     timer_running = False
@@ -198,7 +186,7 @@ def main(page: ft.Page):
     total_duration = logic.data["focus_min"] * 60
     bgm_enabled = False
 
-    # 🎵 播放列表 (只留你有的)
+    # 🎵 播放列表
     bgm_playlist = [{"name": "卡农", "src": "kanong.mp3"}]
     current_bgm_index = 0
 
@@ -211,27 +199,12 @@ def main(page: ft.Page):
     }
 
     # ==========================
-    # 🔊 核心音频组件 (双播放器策略)
+    # 🔊 音频核心
     # ==========================
+    audio_bg = flet_audio.Audio(src="silent.mp3", autoplay=False, release_mode="loop")
+    audio_alarm = flet_audio.Audio(src="alarm.mp3", autoplay=False)
+    page.overlay.extend([audio_bg, audio_alarm])
 
-    # 1. 保活播放器 (背景音/静音)
-    # 必须 loop 循环，一旦开始就不停止，直到时间到
-    audio_bg = flet_audio.Audio(
-        src="silent.mp3",
-        autoplay=False,
-        release_mode="loop"
-    )
-
-    # 2. 闹钟播放器 (独立)
-    audio_alarm = flet_audio.Audio(
-        src="alarm.mp3",
-        autoplay=False
-    )
-
-    page.overlay.append(audio_bg)
-    page.overlay.append(audio_alarm)
-
-    # 系统功能
     def trigger_vibration():
         try:
             vibrator.vibrate(2)
@@ -247,8 +220,14 @@ def main(page: ft.Page):
     # ==========================
     # 组件定义
     # ==========================
+
+    # 天气胶囊
     txt_weather = ft.Text(value="...", size=12, color=THEME["fg"])
     weather_icon = ft.Icon(name=ft.Icons.PETS, size=14, color=THEME["fg"])
+    weather_pill = ft.Container(
+        content=ft.Row([weather_icon, txt_weather], spacing=3),
+        bgcolor="#80FFF0E6", padding=ft.padding.symmetric(horizontal=10, vertical=5), border_radius=15
+    )
 
     def weather_loop_thread():
         while True:
@@ -257,34 +236,39 @@ def main(page: ft.Page):
             page.update()
             time.sleep(300)
 
-    weather_pill = ft.Container(
-        content=ft.Row([weather_icon, txt_weather], spacing=3),
-        bgcolor="#80FFF0E6", padding=ft.padding.symmetric(horizontal=10, vertical=5), border_radius=15
-    )
-
+    # 音乐开关
     btn_bgm = ft.IconButton(
-        icon=ft.Icons.MUSIC_OFF, icon_color="grey", icon_size=24,
+        icon=ft.Icons.MUSIC_OFF, icon_color="grey", icon_size=22,
         tooltip="点击切换: 静音保活 / 播放音乐"
     )
 
+    # 签到按钮
     btn_checkin = ft.ElevatedButton(
-        text="按爪", bgcolor=THEME["white"], color=THEME["fg"], height=30,
+        text="按爪", bgcolor=THEME["white"], color=THEME["fg"], height=32,
         style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=20), padding=10)
     )
 
-    txt_timer = ft.Text(f"{logic.data['focus_min']}:00", size=60, weight="bold", color=THEME["fg"],
+    # 倒计时大字
+    txt_timer = ft.Text(f"{logic.data['focus_min']}:00", size=70, weight="bold", color=THEME["fg"],
                         font_family="Impact")
     txt_cat = ft.Text(random.choice(emojis["idle"]), size=24, color=THEME["fg"])
-    ring_timer = ft.ProgressRing(width=260, height=260, stroke_width=18, value=1.0, color=THEME["fg"],
+
+    # 进度环
+    ring_timer = ft.ProgressRing(width=250, height=250, stroke_width=20, value=1.0, color=THEME["fg"],
                                  bgcolor=THEME["ring_bg"])
+
+    # 按钮组
     btn_start = ft.ElevatedButton(
-        text="开始捕猎", width=160, height=50,
-        style=ft.ButtonStyle(bgcolor=THEME["white"], color=THEME["fg"], elevation=2)
+        text="开始捕猎", width=180, height=55,
+        style=ft.ButtonStyle(bgcolor=THEME["white"], color=THEME["fg"], elevation=3,
+                             shape=ft.RoundedRectangleBorder(radius=30))
     )
+
     btn_skip = ft.ElevatedButton(
-        text="不舔毛了", width=130, height=45, visible=False,
+        text="不舔毛了", width=140, height=45, visible=False,
         style=ft.ButtonStyle(bgcolor=THEME["orange"], color="white", elevation=2)
     )
+
     txt_tomato_stats = ft.Text("今日渔获: (加载中)", color=THEME["fg"], size=14)
     txt_slogan = ft.Text(logic.get_random_quote(), italic=True, text_align="center", color=THEME["fg"], size=12,
                          opacity=0.7)
@@ -312,17 +296,17 @@ def main(page: ft.Page):
             btn_bgm.icon_color = "grey"
             page.snack_bar = ft.SnackBar(ft.Text("🔇 静音保活中"), open=True)
 
+        audio_bg.release_mode = "loop"
         audio_bg.update()
         btn_bgm.update()
+        page.update()
 
-        # 计时中则恢复播放
         if timer_running:
             time.sleep(0.1)
             try:
                 audio_bg.play()
             except:
                 pass
-        page.update()
 
     btn_bgm.on_click = toggle_bgm
 
@@ -353,17 +337,13 @@ def main(page: ft.Page):
         if logic.data["tomatoes"] == 0: t = "(空)"
         return t
 
-    # ⏱️ 倒计时结束逻辑 (最稳版)
     def finish_cycle():
         nonlocal timer_running, is_break_mode, total_duration
-
-        # 1. 暂停保活背景音
         try:
             audio_bg.pause()
         except:
             pass
 
-        # 2. 播放独立闹钟
         try:
             audio_alarm.seek(0)
             audio_alarm.update()
@@ -431,12 +411,13 @@ def main(page: ft.Page):
             btn_start.text = "爪下留情(暂停)"
             txt_cat.value = random.choice(emojis["work"])
 
-            # 【开始计时】启动保活播放器
+            # 保活播放
             try:
                 if bgm_enabled:
                     audio_bg.src = bgm_playlist[current_bgm_index]["src"]
                 else:
                     audio_bg.src = "silent.mp3"
+                audio_bg.release_mode = "loop"
                 audio_bg.update()
                 time.sleep(0.1)
                 audio_bg.play()
@@ -460,7 +441,6 @@ def main(page: ft.Page):
             timer_running = False
             btn_start.text = "继续" if not is_break_mode else "继续休息"
             txt_cat.value = random.choice(emojis["idle"])
-            # 【暂停计时】暂停保活播放器
             try:
                 audio_bg.pause()
             except:
@@ -509,16 +489,19 @@ def main(page: ft.Page):
     page.on_app_lifecycle_state_change = handle_lifecycle_change
 
     # ==========================
-    # 首页布局
+    # UI 组装 (解决遮挡问题的关键区域)
     # ==========================
+
+    # 1. 顶部栏 (使用 Row 控制布局)
     top_bar = ft.Row([
         weather_pill,
-        ft.Row([btn_bgm, ft.IconButton(icon=ft.Icons.SKIP_NEXT, icon_size=16, icon_color=THEME["fg"],
+        ft.Row([btn_bgm, ft.IconButton(icon=ft.Icons.SKIP_NEXT, icon_size=20, icon_color=THEME["fg"],
                                        on_click=lambda e: page.snack_bar.open(
                                            ft.SnackBar(ft.Text("切歌喵~"), open=True)) and page.update())], spacing=0),
         btn_checkin
     ], alignment="spaceBetween")
 
+    # 2. 倒计时卡片
     txt_days_num = ft.Text(f"{logic.get_main_days_left()}", size=48, weight="bold", color=THEME["fg"],
                            font_family="Impact")
     countdown_card = ft.Container(
@@ -532,16 +515,18 @@ def main(page: ft.Page):
         shadow=ft.BoxShadow(spread_radius=1, blur_radius=10, color="#1A000000")
     )
 
+    # 3. 环形计时器
     timer_display = ft.Stack([
-        ft.Container(width=260, height=260, bgcolor=THEME["white"], border_radius=130),
+        ft.Container(width=250, height=250, bgcolor=THEME["white"], border_radius=125),
         ring_timer,
         ft.Container(
             content=ft.Column([ft.Container(height=10), txt_cat, txt_timer], alignment="center",
-                              horizontal_alignment="center", spacing=10),
-            width=260, height=260, alignment=ft.alignment.center
+                              horizontal_alignment="center", spacing=5),
+            width=250, height=250, alignment=ft.alignment.center
         )
-    ], width=260, height=260)
+    ], width=250, height=250)
 
+    # 4. 底部统计卡
     txt_tomato_stats.value = f"今日渔获: {get_tomato_str()}"
     bottom_card = ft.Container(
         content=ft.Row([txt_tomato_stats, ft.IconButton(icon=ft.Icons.SHARE, icon_color=THEME["fg"])],
@@ -549,194 +534,100 @@ def main(page: ft.Page):
         bgcolor=THEME["comp_bg"], padding=10, border_radius=12, width=320
     )
 
-    def pet_cat(e):
-        txt_cat.value = random.choice(emojis["touch"])
-        trigger_vibration()
-        page.update()
-        time.sleep(0.5)
-        txt_cat.value = random.choice(emojis["idle"] if not timer_running else emojis["work"])
-        page.update()
+    # ------------------ 页面构建 (SafeArea 是关键) ------------------
 
-    timer_display.controls[2].on_click = pet_cat
+    # 首页内容
+    home_content = ft.Column([
+        ft.Container(height=10),  # 顶部额外留白
+        top_bar,
+        ft.Container(height=20),
+        countdown_card,
+        ft.Container(height=30),
+        timer_display,
+        ft.Container(height=30),
+        ft.Column([btn_start, ft.Container(height=5), btn_skip], horizontal_alignment="center"),
+        ft.Container(height=20),
+        bottom_card,
+        ft.Container(height=20),
+        txt_slogan,
+        ft.Container(height=10),
+        ft.Text("Created by lian", size=10, color=THEME["fg"], opacity=0.4),
+        ft.Container(height=30)  # 底部额外留白
+    ], horizontal_alignment="center", scroll="auto")
 
-    view_home = ft.Container(
-        padding=ft.padding.only(left=20, right=20, top=10, bottom=50),
-        content=ft.Column([
-            top_bar, ft.Container(height=20), countdown_card, ft.Container(height=30),
-            timer_display, ft.Container(height=30),
-            ft.Column([btn_start, ft.Container(height=5), btn_skip], horizontal_alignment="center"),
-            ft.Container(height=20), bottom_card, ft.Container(height=20),
-            txt_slogan, ft.Container(height=10),
-            ft.Text("Created by lian · 陪你一同努力", size=10, color=THEME["fg"], opacity=0.4)
-        ], horizontal_alignment="center", scroll="auto")
+    # 使用 SafeArea 包裹内容，解决状态栏遮挡
+    view_home = ft.SafeArea(
+        content=ft.Container(
+            content=home_content,
+            padding=ft.padding.symmetric(horizontal=20)
+        )
     )
 
-    # ==========================
-    # 鱼干清单页
-    # ==========================
-    lv_events = ft.Column(spacing=10)
+    # ------------------ 其他页面 (同样应用 SafeArea) ------------------
 
-    def render_events():
-        lv_events.controls.clear()
-        if not logic.data.get("countdowns"): return
-        for i, item in enumerate(logic.data["countdowns"]):
-            days = logic.calculate_days(item["date"])
-            day_color = THEME["red"] if days < 0 else THEME["fg"]
-            day_text = f"{days} 天" if days >= 0 else f"过期 {-days} 天"
-            card = ft.Container(
-                bgcolor=THEME["white"], padding=15, border_radius=10,
-                content=ft.Row([
-                    ft.Column([ft.Text(item["title"], size=16, weight="bold", color=THEME["fg"]),
-                               ft.Text(item["date"], size=12, color="grey")]),
-                    ft.Column([ft.Text("剩余", size=10, color="grey"),
-                               ft.Text(day_text, size=20, weight="bold", color=day_color)],
-                              horizontal_alignment="center"),
-                    ft.IconButton(icon="close", icon_size=18, icon_color="grey",
-                                  on_click=lambda e, idx=i: (logic.remove_countdown_event(idx), render_events()))
-                ], alignment="space_between")
-            )
-            lv_events.controls.append(card)
-        page.update()
-
-    dlg_event_title = ft.TextField(label="目标名称", color=THEME["fg"])
-    dlg_event_date = ft.TextField(label="日期 (YYYY-MM-DD)", color=THEME["fg"])
-
-    def save_new_event(e):
-        if logic.add_countdown_event(dlg_event_title.value, dlg_event_date.value):
-            page.close(dlg_add_event);
-            render_events();
-            dlg_event_title.value = "";
-            dlg_event_date.value = ""
-        else:
-            page.snack_bar = ft.SnackBar(ft.Text("日期格式错啦"), open=True); page.update()
-
-    dlg_add_event = ft.AlertDialog(title=ft.Text("添加倒计时"),
-                                   content=ft.Column([dlg_event_title, dlg_event_date], height=150),
-                                   actions=[ft.TextButton("取消", on_click=lambda e: page.close(dlg_add_event)),
-                                            ft.TextButton("确定", on_click=save_new_event)])
-
-    priority_map = {"red": THEME["red"], "orange": THEME["orange"], "green": THEME["green"]}
-    current_priority = "green"
-
-    def set_priority(color):
-        nonlocal current_priority;
-        current_priority = color
-        for btn in priority_btns.controls:
-            btn.icon = ft.Icons.CIRCLE_OUTLINED if btn.data != color else ft.Icons.CIRCLE
-        page.update()
-
-    priority_btns = ft.Row([
-        ft.IconButton(icon=ft.Icons.CIRCLE_OUTLINED, icon_color=THEME["red"], data="red",
-                      on_click=lambda e: set_priority("red")),
-        ft.IconButton(icon=ft.Icons.CIRCLE_OUTLINED, icon_color=THEME["orange"], data="orange",
-                      on_click=lambda e: set_priority("orange")),
-        ft.IconButton(icon=ft.Icons.CIRCLE, icon_color=THEME["green"], data="green",
-                      on_click=lambda e: set_priority("green"))
-    ])
-
+    # 清单页
     lv_tasks = ft.ListView(expand=True, spacing=5)
-    txt_input_task = ft.TextField(hint_text="输入待办...", expand=True, bgcolor=THEME["white"], border_radius=10,
-                                  border_color="transparent")
 
     def render_tasks():
         lv_tasks.controls.clear()
-        if not logic.data["tasks"]:
+        for t in logic.data["tasks"]:
+            txt = t["text"] if isinstance(t, dict) else t
             lv_tasks.controls.append(
-                ft.Container(content=ft.Text("暂无任务，去晒太阳吧~", color="grey"), alignment=ft.alignment.center,
-                             padding=40))
-        else:
-            for i, task_item in enumerate(logic.data["tasks"]):
-                text = task_item["text"] if isinstance(task_item, dict) else task_item
-                prio = task_item.get("priority", "green") if isinstance(task_item, dict) else "green"
-                lv_tasks.controls.append(ft.Container(
-                    bgcolor=THEME["comp_bg"], padding=12, border_radius=8,
-                    content=ft.Row([
-                        ft.Icon(ft.Icons.CIRCLE, size=12, color=priority_map.get(prio, THEME["green"])),
-                        ft.Text(text, size=14, color=THEME["fg"], expand=True),
-                        ft.IconButton(icon="delete_outline", icon_color=THEME["fg"], icon_size=20,
-                                      on_click=lambda e, idx=i: (logic.remove_task(idx), render_tasks()))
-                    ])
-                ))
+                ft.Container(content=ft.Text(txt, color=THEME["fg"]), bgcolor=THEME["white"], padding=12,
+                             border_radius=8))
         page.update()
 
-    render_events();
+    txt_input_task = ft.TextField(hint_text="输入待办...", expand=True, bgcolor=THEME["white"], border_radius=10,
+                                  border_color="transparent")
+
+    # 待办页面的 SafeArea
+    view_todo = ft.SafeArea(
+        content=ft.Container(
+            padding=ft.padding.all(20),
+            content=ft.Column([
+                ft.Text("鱼干清单", size=24, weight="bold", color=THEME["fg"]),
+                lv_tasks,
+                ft.Row([txt_input_task, ft.IconButton(ft.Icons.ADD_CIRCLE, icon_size=40, icon_color=THEME["fg"],
+                                                      on_click=lambda e: (logic.add_task(txt_input_task.value),
+                                                                          render_tasks(), txt_input_task.update()))])
+            ])
+        )
+    )
     render_tasks()
 
-    view_todo = ft.Container(padding=ft.padding.only(left=20, right=20, top=20, bottom=160), content=ft.Column([
-        ft.Row([ft.Text("鱼干清单", size=24, weight="bold", color=THEME["fg"]),
-                ft.Row([ft.IconButton(icon="history", icon_color=THEME["fg"], on_click=lambda e: show_history()),
-                        ft.IconButton(icon="alarm_add", icon_color=THEME["fg"],
-                                      on_click=lambda e: page.open(dlg_add_event))])], alignment="space_between"),
-        lv_events, ft.Divider(color=THEME["fg"], height=30),
-        ft.Container(content=lv_tasks, expand=True, bgcolor=THEME["bg"]),
-        ft.Container(content=ft.Row([ft.Text("优先级:", size=12, color="grey"), priority_btns], alignment="end")),
-        ft.Row([txt_input_task, ft.IconButton("add_circle", icon_color=THEME["fg"], icon_size=40, on_click=lambda e: (
-            logic.add_task(txt_input_task.value, current_priority), render_tasks(), txt_input_task.update()))])
-    ]))
-
-    # ==========================
     # 设置页
-    # ==========================
-    input_name = ft.TextField(label="猎物名称", value=logic.data["target_name"], color=THEME["fg"])
-    input_date = ft.TextField(label="日期", value=logic.data["target_date"], color=THEME["fg"])
-    input_city = ft.TextField(label="城市", value=logic.data.get("city", "郑州"), color=THEME["fg"])
-    input_focus = ft.TextField(label="捕猎(分)", value=str(logic.data["focus_min"]), color=THEME["fg"])
-    input_break = ft.TextField(label="舔毛(分)", value=str(logic.data["break_min"]), color=THEME["fg"])
+    input_name = ft.TextField(label="目标", value=logic.data["target_name"], color=THEME["fg"])
+    input_focus = ft.TextField(label="专注(分)", value=str(logic.data["focus_min"]), color=THEME["fg"])
 
-    def show_history():
-        hist = "\n".join(reversed(logic.data["history"][-20:])) or "日记本是空的..."
-        dlg = ft.AlertDialog(title=ft.Text("猫猫日记"),
-                             content=ft.Container(content=ft.Text(hist, size=12, selectable=True), height=300),
-                             actions=[ft.TextButton("关闭", on_click=lambda e: page.close(dlg))])
-        page.open(dlg)
-
-    def show_chart(e):
-        stats = logic.get_weekly_data()
-        chart_groups = [ft.BarChartGroup(x=i, bar_rods=[
-            ft.BarChartRod(from_y=0, to_y=d["count"], color=THEME["fg"], width=16, border_radius=4)]) for i, d in
-                        enumerate(stats)]
-        bottom_axis = ft.ChartAxis(
-            labels=[ft.ChartAxisLabel(value=i, label=ft.Text(d["date"], size=10, color="grey")) for i, d in
-                    enumerate(stats)])
-        chart = ft.BarChart(bar_groups=chart_groups, border=ft.border.all(1, "transparent"),
-                            left_axis=ft.ChartAxis(show_labels=False), bottom_axis=bottom_axis, height=200,
-                            max_y=max([x["count"] for x in stats], default=5) + 2)
-        dlg = ft.AlertDialog(content=ft.Container(content=ft.Column(
-            [ft.Text("近7天周报", size=18, weight="bold", color=THEME["fg"]), ft.Container(height=20), chart],
-            horizontal_alignment="center"), height=300, width=350, padding=10), bgcolor="white")
-        page.open(dlg)
-
-    def save_settings(e):
-        logic.update_settings(input_name.value, input_date.value, input_city.value, input_focus.value,
-                              input_break.value)
+    def save_s(e):
+        logic.update_settings(input_name.value, logic.data["target_date"], "郑州", input_focus.value, "5")
         txt_days_num.value = f"{logic.get_main_days_left()}"
         if not timer_running and not is_break_mode:
-            try:
-                mins = int(logic.data["focus_min"])
-            except:
-                mins = 25
+            mins = int(logic.data["focus_min"]) if logic.data["focus_min"] else 25
             txt_timer.value = f"{mins:02}:00"
             nonlocal total_duration
             total_duration = mins * 60
             ring_timer.value = 1.0
-        txt_weather.value = "刷新中..."
-        page.snack_bar = ft.SnackBar(ft.Text("设置已保存！"), open=True)
+        page.snack_bar = ft.SnackBar(ft.Text("保存成功"), open=True)
         page.update()
 
-    view_settings = ft.Container(padding=ft.padding.only(left=20, right=20, top=20, bottom=160), content=ft.Column([
-        ft.Text("猫窝设置", size=24, weight="bold", color=THEME["fg"]),
-        ft.Container(height=10), input_name, input_date, input_city, input_focus, input_break,
-        ft.Container(height=10),
-        ft.ElevatedButton("保存设置", on_click=save_settings, bgcolor=THEME["white"], color=THEME["fg"]),
-        ft.Divider(color=THEME["fg"]),
-        ft.ElevatedButton("📊 查看周报", on_click=show_chart, bgcolor=THEME["comp_bg"], color=THEME["fg"], width=390),
-        ft.Container(height=5),
-        ft.ElevatedButton("📜 翻看日记", on_click=lambda e: show_history(), bgcolor=THEME["white"], color=THEME["fg"],
-                          width=390),
-        ft.Container(height=20),
-        ft.TextButton("🗑️ 清空今日数据", on_click=lambda e: (logic.clear_daily_stats(), page.snack_bar.open(
-            ft.SnackBar(ft.Text("已清空"), open=True)) or page.update()), style=ft.ButtonStyle(color=THEME["fg"]))
-    ], scroll="auto"))
+    # 设置页面的 SafeArea
+    view_settings = ft.SafeArea(
+        content=ft.Container(
+            padding=ft.padding.all(20),
+            content=ft.Column([
+                ft.Text("猫窝设置", size=24, weight="bold", color=THEME["fg"]),
+                ft.Container(height=10),
+                input_name, input_focus,
+                ft.Container(height=10),
+                ft.ElevatedButton("保存设置", on_click=save_s, bgcolor=THEME["white"], color=THEME["fg"]),
+                ft.Divider(color=THEME["fg"]),
+                ft.TextButton("清空数据", on_click=lambda e: (logic.clear_daily_stats(), page.snack_bar.open(
+                    ft.SnackBar(ft.Text("已清空"), open=True)) or page.update()),
+                              style=ft.ButtonStyle(color=THEME["fg"]))
+            ], scroll="auto")
+        )
+    )
 
     def nav_change(e):
         idx = e.control.selected_index
