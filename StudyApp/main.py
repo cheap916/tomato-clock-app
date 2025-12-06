@@ -11,7 +11,7 @@ from plyer import vibrator, notification
 
 
 # ==========================================
-# 1. 逻辑层
+# 1. 逻辑层 (保持不变)
 # ==========================================
 class StudyLogic:
     def __init__(self):
@@ -214,10 +214,12 @@ def main(page: ft.Page):
     # 🎵 BGM 状态
     bgm_enabled = True
 
-    # 🎵 播放列表 (请确保这些文件在同级目录！)
+    # 🎵 播放列表 (请确保文件在 assets 文件夹)
     bgm_playlist = [
-        {"name": "卡农", "src": "assets/kanong.mp3"},  # 🔴 加上 assets/
-        # 如果你有其他歌，也记得加上 assets/
+        {"name": "呼噜噜", "src": "assets/purr.mp3"},
+        {"name": "窗外雨声", "src": "assets/rain.mp3"},
+        {"name": "森林鸟鸣", "src": "assets/forest.mp3"},
+        {"name": "深夜书房", "src": "assets/night.mp3"},
     ]
     current_bgm_index = 0
 
@@ -229,10 +231,9 @@ def main(page: ft.Page):
         "touch": ["(///ω///)", "(=ﾟωﾟ)ﾉ", "(/ω＼)", "Meow~"]
     }
 
-    # 🔊 音频设置
+    # 🔊 音频初始化 (修复 release_mode 报错)
     audio_alarm = flet_audio.Audio(src="assets/alarm.mp3", autoplay=False)
-    # 初始化背景音，默认第一首
-    # 直接用字符串 "loop" 就可以解决报错
+    # 使用 "loop" 字符串而不是 ft.AudioReleaseMode.LOOP
     audio_bg = flet_audio.Audio(src=bgm_playlist[0]["src"], autoplay=False, release_mode="loop")
 
     page.overlay.append(audio_alarm)
@@ -258,7 +259,6 @@ def main(page: ft.Page):
         if bgm_enabled:
             btn_bgm.icon = ft.Icons.MUSIC_NOTE
             btn_bgm.tooltip = "背景音: 开启"
-            # 只有在专注倒计时中才播放
             if timer_running:
                 try:
                     audio_bg.play()
@@ -278,28 +278,23 @@ def main(page: ft.Page):
     # 🎵 切换下一首
     def next_bgm(e):
         nonlocal current_bgm_index
-        # 1. 计算下一首索引
         current_bgm_index = (current_bgm_index + 1) % len(bgm_playlist)
         new_song = bgm_playlist[current_bgm_index]
 
-        # 2. 暂停当前，更新源
         try:
             audio_bg.pause()
         except:
             pass
 
-        # 更新源文件
         audio_bg.src = new_song["src"]
         audio_bg.update()
 
-        # 3. 如果原本就在播放(且开关开启)，则立即播放新歌
         if bgm_enabled and timer_running:
             try:
                 audio_bg.play()
             except:
                 pass
 
-        # 4. 提示
         page.snack_bar = ft.SnackBar(ft.Text(f"🎵 切换至: {new_song['name']} 🐾"), open=True)
         page.update()
 
@@ -418,12 +413,12 @@ def main(page: ft.Page):
         )
     )
 
-    # 🎵 开关按钮
+    # 🎵 开关按钮 (放在单独的控制条)
     btn_bgm = ft.IconButton(
         icon=ft.Icons.MUSIC_NOTE,
         icon_color=THEME["fg"],
         icon_size=20,
-        tooltip="白噪音: 开启",
+        tooltip="白噪音",
         on_click=toggle_bgm
     )
 
@@ -434,6 +429,20 @@ def main(page: ft.Page):
         icon_size=20,
         tooltip="切歌",
         on_click=next_bgm
+    )
+
+    # 🎵 独立的猫咪音乐条 (UI 优化)
+    music_bar = ft.Container(
+        content=ft.Row([
+            ft.Icon(ft.Icons.MUSIC_NOTE, size=14, color=THEME["fg"]),
+            ft.Text("背景音:", size=12, color=THEME["fg"]),
+            btn_bgm,
+            btn_next_bgm
+        ], alignment="center", spacing=0),
+        bgcolor="#80FFF0E6",  # 和天气胶囊一样的半透明背景
+        padding=ft.padding.symmetric(horizontal=10, vertical=0),
+        border_radius=20,
+        height=32
     )
 
     def refresh_checkin_ui():
@@ -673,15 +682,21 @@ def main(page: ft.Page):
     view_home = ft.Container(
         padding=ft.padding.only(left=20, right=20, top=10, bottom=160),
         content=ft.Column([
+            # 1. 顶部只有天气和签到，保证不打架
             ft.Row([
                 weather_pill,
-                ft.Container(expand=True),
-                btn_bgm,  # 🎵 BGM开关
-                btn_next_bgm,  # 🎵 下一首
-                ft.Container(width=5),
+                ft.Container(expand=True),  # 占位符，把两边撑开
                 btn_checkin
             ], alignment="spaceBetween"),
+
             ft.Container(height=10),
+
+            # 2. 音乐控制条单独一行，居中显示，美观不冲突
+            music_bar,
+
+            ft.Container(height=10),
+
+            # 3. 倒计时卡片
             countdown_card,
             ft.Container(height=20),
             stack_timer_display,
