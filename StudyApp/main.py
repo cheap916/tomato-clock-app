@@ -154,14 +154,14 @@ class StudyLogic:
             res = requests.get(url, timeout=10, headers=headers)
             if res.status_code == 200:
                 current_time = datetime.now().strftime("%H:%M")
-                return f"{city}: {res.text.strip()} ({current_time})"
-            return f"{city}: 信号飞到火星去啦"
+                return f"{city} {res.text.strip()} ({current_time})"
+            return f"{city}: 信号飞到火星去了"
         except:
             return "网络被猫咬断了..."
 
 
 # ==========================================
-# 2. 界面层
+# 2. 界面层 (修复 colors 报错)
 # ==========================================
 def main(page: ft.Page):
     page.window_width = 390
@@ -169,10 +169,17 @@ def main(page: ft.Page):
     page.title = "任务助手"
     page.theme_mode = ft.ThemeMode.LIGHT
 
+    # 🎨 配色方案
     THEME = {
-        "bg": "#FFCCCC", "fg": "#D24D57", "comp_bg": "#FAEBD7",
-        "green": "#4CAF50", "white": "#FFFFFF", "red": "#FF5252",
-        "card_bg": "#FFF8F0", "orange": "#FF9800"
+        "bg": "#FFCCCC",  # 主背景粉色
+        "fg": "#D24D57",  # 字体深红
+        "comp_bg": "#FFF0E6",  # 组件背景(更浅的米色)
+        "green": "#4CAF50",
+        "white": "#FFFFFF",
+        "red": "#FF5252",
+        "card_bg": "#FFFFFF",
+        "orange": "#FF9800",
+        "ring_bg": "#FFEEEE"
     }
     page.bgcolor = THEME["bg"]
     page.padding = 0
@@ -182,10 +189,10 @@ def main(page: ft.Page):
     timer_running = False
     is_break_mode = False
     end_timestamp = 0
-    total_duration = logic.data["focus_min"] * 60  # 记录总时长
+    total_duration = logic.data["focus_min"] * 60
 
     emojis = {
-        "idle": ["( =ω=)..zzZ", "(=^･ω･^=)", "ฅ(ﾐ・ﻌ・ﾐ)ฅ", "( -ω-)..zzZ", "(=ﾟωﾟ)ﾉ"],
+        "idle": ["( =ω=)..zzZ", "(=^･ω･^=)", "ฅ(ﾐ・ﻌ・ﾐ)ฅ", "( -ω-)..zzZ"],
         "work": ["( * >ω<)p", "q(>ω< * )", "φ(．．;)", "(ง •̀_•́)ง"],
         "break": ["( ~ o ~ )~", "旦_(^O^ )", "(=^ ◡ ^=)", "☕(・ω・)"],
         "happy": ["(≧◡≦) ♡", "(=^･^=)♪", "(/ =ω=)/", "o(>ω<)o"]
@@ -197,61 +204,61 @@ def main(page: ft.Page):
     def trigger_vibration():
         try:
             vibrator.vibrate(1)
-        except Exception as e:
-            print(f"震动失败: {e}")
+        except:
+            pass
 
-    # ==========================
-    # 生命週期監聽
-    # ==========================
     def handle_lifecycle_change(e):
         if e.data == "resumed" and timer_running:
             nonlocal end_timestamp
             now = time.time()
             remaining = int(end_timestamp - now)
             if remaining < 0: remaining = 0
-
             txt_timer.value = f"{remaining // 60:02}:{remaining % 60:02}"
-
             if total_duration > 0:
                 progress = remaining / total_duration
                 ring_timer.value = progress
-
             page.update()
 
     page.on_app_lifecycle_state_change = handle_lifecycle_change
 
     def get_watermark():
         return ft.Container(
-            content=ft.Text(
-                "Created by lian · 陪你一同努力\n科技不是高高在上 \n而是服务于人民",
-                size=10, color=THEME["fg"], opacity=0.5, text_align="center"
-            ),
+            content=ft.Text("Created by lian · 陪你一同努力\n科技不是高高在上 \n而是服务于人民", size=10,
+                            color=THEME["fg"], opacity=0.5, text_align="center"),
             padding=ft.padding.only(top=20, bottom=10),
             alignment=ft.alignment.center
         )
+
+    # ==========================
+    # 首页组件
+    # ==========================
+
+    # 1. 天气胶囊
+    txt_weather = ft.Text(value="正在召唤气象喵...", size=12, color=THEME["fg"])
+
+    weather_pill = ft.Container(
+        content=ft.Row([
+            ft.Icon(name="cloud_queue", size=16, color=THEME["fg"]),
+            txt_weather
+        ], alignment="center", spacing=5),
+        bgcolor="#80FFF0E6",  # 🟢 修复：直接使用带透明度的 Hex 颜色 (50% opacity of #FFF0E6)
+        padding=ft.padding.symmetric(horizontal=15, vertical=5),
+        border_radius=20,
+    )
 
     def update_weather_thread():
         w_str = logic.fetch_weather()
         txt_weather.value = w_str
         page.update()
 
-    def show_history_e(e):
-        hist_text = "\n".join(reversed(logic.data["history"][-20:]))
-        if not hist_text: hist_text = "猫猫日记本是空的..."
-        dlg = ft.AlertDialog(title=ft.Text("猫猫日记 📝"),
-                             content=ft.Container(content=ft.Text(hist_text, size=12, selectable=True), height=300,
-                                                  width=300),
-                             actions=[ft.TextButton("关闭", on_click=lambda e: page.close(dlg))],
-                             bgcolor=THEME["comp_bg"])
-        page.open(dlg)
-
-    # ==========================
-    # 首页组件
-    # ==========================
-    txt_weather = ft.Text(value="正在召唤气象喵...", size=14, weight="bold", color=THEME["fg"])
-
-    btn_checkin = ft.ElevatedButton(text="📅 每日按爪", bgcolor=THEME["comp_bg"], color=THEME["fg"], width=160,
-                                    style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=15)))
+    # 2. 签到按钮
+    btn_checkin = ft.ElevatedButton(
+        text="📅 每日按爪",
+        bgcolor=THEME["white"],
+        color=THEME["fg"],
+        elevation=2,
+        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=20))
+    )
 
     def refresh_checkin_ui():
         if logic.is_checked_in():
@@ -260,7 +267,7 @@ def main(page: ft.Page):
             btn_checkin.color = "white"
         else:
             btn_checkin.text = "📅 每日按爪"
-            btn_checkin.bgcolor = THEME["comp_bg"]
+            btn_checkin.bgcolor = THEME["white"]
             btn_checkin.color = THEME["fg"]
         page.update()
 
@@ -274,81 +281,99 @@ def main(page: ft.Page):
     btn_checkin.on_click = checkin_click
     refresh_checkin_ui()
 
-    txt_days_label = ft.Text(f"距离{logic.data['target_name']}仅剩", size=16, color=THEME["fg"], weight="bold")
-    txt_days_num = ft.Text(f"{logic.get_main_days_left()} 天", size=32, weight="bold", color=THEME["fg"],
+    # 3. 倒计时卡片
+    txt_days_label = ft.Text(f"距离{logic.data['target_name']}仅剩", size=14, color="grey")
+    txt_days_num = ft.Text(f"{logic.get_main_days_left()}", size=40, weight="bold", color=THEME["fg"],
                            font_family="Impact")
-    container_countdown = ft.Column(
-        [txt_days_label, txt_days_num, ft.Container(height=2, bgcolor=THEME["fg"], width=150)],
-        horizontal_alignment="center", spacing=5)
+    txt_days_unit = ft.Text("天", size=14, color=THEME["fg"], weight="bold", offset=ft.Offset(0, 0.6))
 
-    txt_timer_title = ft.Text("专注计时", size=20, weight="bold", color=THEME["fg"])
+    countdown_card = ft.Container(
+        content=ft.Column([
+            txt_days_label,
+            ft.Row([txt_days_num, txt_days_unit], alignment="center", vertical_alignment="end")
+        ], horizontal_alignment="center", spacing=0),
+        bgcolor=THEME["white"],
+        padding=15,
+        border_radius=15,
+        width=300,
+        # 🟢 修复：shadow color 使用 Hex 带透明度
+        shadow=ft.BoxShadow(spread_radius=1, blur_radius=10, color="#1A000000")
+    )
 
-    # 🌟 圆环相关组件
-    txt_cat = ft.Text(random.choice(emojis["idle"]), size=24, weight="bold", color=THEME["fg"])
-    txt_timer = ft.Text(f"{logic.data['focus_min']}:00", size=50, weight="bold", color=THEME["fg"],
+    # 4. 圆环时钟
+    txt_timer_title = ft.Text("专注计时", size=18, weight="bold", color=THEME["fg"])
+    txt_cat = ft.Text(random.choice(emojis["idle"]), size=20, color=THEME["fg"])
+    txt_timer = ft.Text(f"{logic.data['focus_min']}:00", size=56, weight="bold", color=THEME["fg"],
                         font_family="Impact")
 
     ring_timer = ft.ProgressRing(
-        width=240,
-        height=240,
-        stroke_width=20,
+        width=260,
+        height=260,
+        stroke_width=12,
         value=1.0,
         color=THEME["fg"],
-        bgcolor=THEME["comp_bg"]
+        bgcolor=THEME["ring_bg"]
     )
 
     stack_timer_display = ft.Stack(
         controls=[
+            ft.Container(
+                width=260, height=260, border_radius=130,
+                bgcolor=THEME["white"],
+                # 🟢 修复：shadow color 使用 Hex 带透明度
+                shadow=ft.BoxShadow(spread_radius=1, blur_radius=15, color="#1A000000")
+            ),
             ring_timer,
             ft.Container(
                 content=ft.Column([
-                    ft.Container(height=20),
+                    ft.Container(height=10),
                     txt_cat,
                     txt_timer
-                ], alignment="center", horizontal_alignment="center", spacing=0),
+                ], alignment="center", horizontal_alignment="center", spacing=5),
                 alignment=ft.alignment.center,
-                width=240, height=240,
-                border_radius=120,
+                width=260, height=260,
+                border_radius=130,
             )
         ],
-        width=240, height=240
+        width=260, height=260
     )
 
+    # 5. 控制按钮
     btn_start = ft.ElevatedButton(
-        text="开始专注", width=140, height=45,
-        style=ft.ButtonStyle(bgcolor=THEME["comp_bg"], color=THEME["fg"], shape=ft.RoundedRectangleBorder(radius=15),
-                             elevation=5)
+        text="开始专注", width=140, height=50,
+        style=ft.ButtonStyle(
+            bgcolor=THEME["white"],
+            color=THEME["fg"],
+            shape=ft.RoundedRectangleBorder(radius=25),
+            elevation=4
+        )
     )
 
     def skip_break_e(e):
-        # 🟢 修复点：在这里正确声明 nonlocal
         nonlocal timer_running, is_break_mode, total_duration
         timer_running = False
         is_break_mode = False
-
         next_min = logic.data["focus_min"]
         total_duration = next_min * 60
-
         txt_timer_title.value = "专注计时"
         txt_timer.color = THEME["fg"]
         ring_timer.color = THEME["fg"]
         ring_timer.value = 1.0
         txt_timer.value = f"{next_min:02}:00"
-
         btn_start.text = "开始专注"
-        btn_start.bgcolor = THEME["comp_bg"]
+        btn_start.bgcolor = THEME["white"]
         btn_skip.visible = False
         txt_cat.value = random.choice(emojis["idle"])
-
         page.snack_bar = ft.SnackBar(ft.Text("休息结束，准备开始专注！"), open=True)
         page.update()
 
     btn_skip = ft.ElevatedButton(
-        text="跳过休息", width=140, height=45, visible=False, on_click=skip_break_e,
-        style=ft.ButtonStyle(bgcolor=THEME["orange"], color="white", shape=ft.RoundedRectangleBorder(radius=15),
-                             elevation=5)
+        text="跳过休息", width=140, height=50, visible=False, on_click=skip_break_e,
+        style=ft.ButtonStyle(bgcolor=THEME["orange"], color="white", shape=ft.RoundedRectangleBorder(radius=25),
+                             elevation=4)
     )
 
+    # 6. 底部统计栏
     def get_tomato_str():
         t = "🍅 " * min(logic.data["tomatoes"], 6)
         if logic.data["tomatoes"] > 6: t += "..."
@@ -356,16 +381,18 @@ def main(page: ft.Page):
         return t
 
     txt_tomato_stats = ft.Text(f"今日投喂: {get_tomato_str()}", color=THEME["fg"], size=14)
-    txt_slogan = ft.Text(logic.get_random_quote(), italic=True, text_align="center", color=THEME["fg"], size=14)
+    txt_slogan = ft.Text(logic.get_random_quote(), italic=True, text_align="center", color=THEME["fg"], size=12,
+                         opacity=0.8)
 
     def pet_the_cat(e):
         txt_cat.value = random.choice(emojis["happy"])
         txt_cat.update()
-        page.snack_bar = ft.SnackBar(ft.Text("呼噜噜... (被摸得很舒服) 🐾"), open=True)
+        page.snack_bar = ft.SnackBar(ft.Text("呼噜噜... 🐾"), open=True)
         page.update()
 
-    stack_timer_display.controls[1].on_click = pet_the_cat
+    stack_timer_display.controls[2].on_click = pet_the_cat
 
+    # 分享卡片
     def open_share_card(e):
         today_date = datetime.now().strftime("%Y年%m月%d日")
         weekday = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][datetime.now().weekday()]
@@ -402,7 +429,6 @@ def main(page: ft.Page):
         return f"{seconds // 60:02}:{seconds % 60:02}"
 
     def timer_loop():
-        # 🟢 修复点：在这里正确声明 nonlocal
         nonlocal timer_running, is_break_mode, end_timestamp, total_duration
         while timer_running:
             now = time.time()
@@ -413,15 +439,12 @@ def main(page: ft.Page):
                 ring_timer.value = 0.0
                 page.update()
                 break
-
             txt_timer.value = format_time(remaining)
-
             if total_duration > 0:
                 ratio = remaining / total_duration
                 if ratio < 0: ratio = 0
                 if ratio > 1: ratio = 1
                 ring_timer.value = ratio
-
             page.update()
             time.sleep(0.1)
 
@@ -439,18 +462,13 @@ def main(page: ft.Page):
                 logic.increment_tomato()
                 txt_tomato_stats.value = f"今日投喂: {get_tomato_str()}"
                 is_break_mode = True
-
                 next_min = logic.data["break_min"]
-                # 重新计算总时长 (给圆环用)
                 total_duration = next_min * 60
-
                 txt_timer_title.value = f"☕ 喝茶时间 {next_min} 分钟"
                 txt_timer.color = THEME["green"]
                 txt_timer.value = f"{next_min:02}:00"
-
                 ring_timer.color = THEME["green"]
                 ring_timer.value = 1.0
-
                 btn_start.text = "开始休息"
                 btn_start.bgcolor = THEME["green"]
                 btn_start.color = "white"
@@ -459,19 +477,15 @@ def main(page: ft.Page):
                 page.snack_bar = ft.SnackBar(ft.Text("喵！专注完成！(嗡嗡嗡~)"), open=True)
             else:
                 is_break_mode = False
-
                 next_min = logic.data["focus_min"]
                 total_duration = next_min * 60
-
                 txt_timer_title.value = "专注计时"
                 txt_timer.color = THEME["fg"]
                 txt_timer.value = f"{next_min:02}:00"
-
                 ring_timer.color = THEME["fg"]
                 ring_timer.value = 1.0
-
                 btn_start.text = "开始专注"
-                btn_start.bgcolor = THEME["comp_bg"]
+                btn_start.bgcolor = THEME["white"]
                 btn_start.color = THEME["fg"]
                 btn_skip.visible = False
                 txt_cat.value = random.choice(emojis["idle"])
@@ -479,7 +493,6 @@ def main(page: ft.Page):
             page.update()
 
     def toggle_timer(e):
-        # 🟢 修复点：在这里正确声明 nonlocal
         nonlocal timer_running, end_timestamp, total_duration
         if not timer_running:
             timer_running = True
@@ -508,22 +521,39 @@ def main(page: ft.Page):
 
     btn_start.on_click = toggle_timer
 
+    # === 布局组装 ===
     view_home = ft.Container(padding=20, content=ft.Column([
-        ft.Container(height=10), txt_weather, ft.Container(height=10), btn_checkin,
-        ft.Container(height=20), container_countdown, ft.Container(height=20),
-        txt_timer_title,
+        ft.Container(height=20),
+        weather_pill,
+        ft.Container(height=15),
+        btn_checkin,
+        ft.Container(height=25),
+        countdown_card,
+        ft.Container(height=25),
         stack_timer_display,
+        ft.Container(height=25),
         ft.Column([btn_start, ft.Container(height=5), btn_skip], horizontal_alignment="center"),
         ft.Container(height=10),
         ft.Row([txt_tomato_stats, btn_share], alignment="center"),
-        ft.Container(height=20), txt_slogan,
+        ft.Container(height=20),
+        txt_slogan,
         get_watermark()
     ], horizontal_alignment="center", scroll="auto"))
 
     # ==========================
     # 2. 清单页
     # ==========================
-    lv_events = ft.Column(spacing=5)
+    def show_history_e(e):
+        hist_text = "\n".join(reversed(logic.data["history"][-20:]))
+        if not hist_text: hist_text = "猫猫日记本是空的..."
+        dlg = ft.AlertDialog(title=ft.Text("猫猫日记 📝"),
+                             content=ft.Container(content=ft.Text(hist_text, size=12, selectable=True), height=300,
+                                                  width=300),
+                             actions=[ft.TextButton("关闭", on_click=lambda e: page.close(dlg))],
+                             bgcolor=THEME["comp_bg"])
+        page.open(dlg)
+
+    lv_events = ft.Column(spacing=10)
 
     def render_events():
         lv_events.controls.clear()
@@ -534,33 +564,40 @@ def main(page: ft.Page):
             days = logic.calculate_days(date_str)
             day_color = THEME["red"] if days < 0 else THEME["fg"]
             day_text = f"{days} 天" if days >= 0 else f"过期 {-days} 天"
-            card = ft.Container(bgcolor=THEME["comp_bg"], padding=10, border_radius=10, content=ft.Row([
-                ft.Column([ft.Text(title, size=16, weight="bold", color=THEME["fg"]),
-                           ft.Text(date_str, size=12, color="grey")], expand=True),
-                ft.Column([ft.Text("剩余", size=10, color="grey"),
-                           ft.Text(day_text, size=20, weight="bold", color=day_color)], horizontal_alignment="center"),
-                ft.IconButton(icon="close", icon_size=16, icon_color="grey",
-                              on_click=lambda e, idx=i: delete_event(idx))
-            ], alignment="space_between"))
+            # 🟢 修复：shadow color 使用 Hex 带透明度
+            card = ft.Container(
+                bgcolor=THEME["white"],
+                padding=15,
+                border_radius=10,
+                shadow=ft.BoxShadow(blur_radius=5, color="#0D000000"),
+                content=ft.Row([
+                    ft.Column([ft.Text(title, size=16, weight="bold", color=THEME["fg"]),
+                               ft.Text(date_str, size=12, color="grey")], expand=True),
+                    ft.Column([ft.Text("剩余", size=10, color="grey"),
+                               ft.Text(day_text, size=20, weight="bold", color=day_color)],
+                              horizontal_alignment="center"),
+                    ft.IconButton(icon="close", icon_size=18, icon_color="grey",
+                                  on_click=lambda e, idx=i: delete_event(idx))
+                ], alignment="space_between")
+            )
             lv_events.controls.append(card)
         page.update()
 
     def delete_event(index):
-        logic.remove_countdown_event(index)
-        render_events()
+        logic.remove_countdown_event(index); render_events()
 
-    dlg_event_title = ft.TextField(label="事项名称 (如: 抓老鼠比赛)", color=THEME["fg"])
+    dlg_event_title = ft.TextField(label="事项名称", color=THEME["fg"])
     dlg_event_date = ft.TextField(label="日期 (YYYY-MM-DD)", color=THEME["fg"])
 
     def save_new_event(e):
         if logic.add_countdown_event(dlg_event_title.value, dlg_event_date.value):
-            page.close(dlg_add_event)
-            render_events()
-            dlg_event_title.value = ""
-            dlg_event_date.value = ""
+            page.close(dlg_add_event);
+            render_events();
+            dlg_event_title.value = "";
+            dlg_event_date.value = "";
             page.snack_bar = ft.SnackBar(ft.Text("喵！新目标设定完毕！"), open=True)
         else:
-            page.snack_bar = ft.SnackBar(ft.Text("日期格式错啦，猫猫看不懂"), open=True)
+            page.snack_bar = ft.SnackBar(ft.Text("日期格式错啦"), open=True)
         page.update()
 
     dlg_add_event = ft.AlertDialog(title=ft.Text("添加倒计时"),
@@ -573,13 +610,21 @@ def main(page: ft.Page):
         page.open(dlg_add_event)
 
     lv_tasks = ft.ListView(expand=True, spacing=5)
-    txt_input_task = ft.TextField(hint_text="输入任务...", expand=True, bgcolor=THEME["comp_bg"], color=THEME["fg"],
-                                  border_color=THEME["fg"], text_size=14, content_padding=10)
+    txt_input_task = ft.TextField(
+        hint_text="输入任务...",
+        expand=True,
+        bgcolor=THEME["white"],
+        color=THEME["fg"],
+        border_radius=10,
+        border_color="transparent",
+        text_size=14,
+        content_padding=15
+    )
 
     empty_state = ft.Container(content=ft.Column(
         [ft.Text("( =ω=)..zzZ", size=40, color="grey"), ft.Text("暂无任务，捉只蝴蝶吧~ 🦋", color="grey")],
         horizontal_alignment="center", alignment=ft.MainAxisAlignment.CENTER), alignment=ft.alignment.center,
-        padding=40)
+                               padding=40)
 
     def render_tasks():
         lv_tasks.controls.clear()
@@ -588,38 +633,42 @@ def main(page: ft.Page):
         else:
             for i, task_str in enumerate(logic.data["tasks"]):
                 lv_tasks.controls.append(
-                    ft.Container(bgcolor=THEME["comp_bg"], padding=10, border_radius=5, content=ft.Row([
-                        ft.Text(task_str, size=14, color=THEME["fg"], expand=True),
-                        ft.IconButton(icon="delete_outline", icon_color=THEME["fg"], icon_size=20,
-                                      on_click=lambda e, idx=i: delete_task(idx))
-                    ])))
+                    ft.Container(
+                        bgcolor=THEME["comp_bg"],
+                        padding=12,
+                        border_radius=8,
+                        content=ft.Row([
+                            ft.Text(task_str, size=14, color=THEME["fg"], expand=True),
+                            ft.IconButton(icon="delete_outline", icon_color=THEME["fg"], icon_size=20,
+                                          on_click=lambda e, idx=i: delete_task(idx))
+                        ])
+                    )
+                )
         page.update()
 
     def add_task_e(e):
-        if txt_input_task.value:
-            logic.add_task(txt_input_task.value)
-            txt_input_task.value = ""
-            render_tasks()
+        if txt_input_task.value: logic.add_task(txt_input_task.value); txt_input_task.value = ""; render_tasks()
 
     def delete_task(idx):
-        logic.remove_task(idx)
-        render_tasks()
+        logic.remove_task(idx); render_tasks()
 
-    render_events()
+    render_events();
     render_tasks()
 
     view_todo = ft.Container(padding=20, content=ft.Column([
         ft.Row([
             ft.Text("待办清单 🐾", size=24, weight="bold", color=THEME["fg"]),
             ft.Row([
-                ft.IconButton(icon="history", icon_color=THEME["fg"], tooltip="查看历史记录", on_click=show_history_e),
+                ft.IconButton(icon="history", icon_color=THEME["fg"], tooltip="查看历史", on_click=show_history_e),
                 ft.IconButton(icon="alarm_add", icon_color=THEME["fg"], tooltip="添加倒计时",
                               on_click=open_add_event_dialog)
             ])
         ], alignment="space_between"),
-        lv_events, ft.Divider(color=THEME["fg"], thickness=1),
+        lv_events,
+        ft.Divider(color=THEME["fg"], thickness=1, height=30),
         ft.Container(content=lv_tasks, expand=True, bgcolor=THEME["bg"]),
-        ft.Row([txt_input_task, ft.IconButton("add", icon_color=THEME["fg"], on_click=add_task_e)]),
+        ft.Row(
+            [txt_input_task, ft.IconButton("add_circle", icon_color=THEME["fg"], icon_size=40, on_click=add_task_e)]),
         get_watermark()
     ]))
 
@@ -627,8 +676,15 @@ def main(page: ft.Page):
     # 3. 设置页
     # ==========================
     def create_input(label, val):
-        return ft.TextField(label=label, value=val, label_style=ft.TextStyle(color=THEME["fg"]), color=THEME["fg"],
-                            border_color=THEME["fg"], cursor_color=THEME["fg"])
+        return ft.TextField(
+            label=label, value=val,
+            label_style=ft.TextStyle(color=THEME["fg"]),
+            color=THEME["fg"],
+            bgcolor=THEME["white"],
+            border_radius=10,
+            border_color="transparent",
+            cursor_color=THEME["fg"]
+        )
 
     input_name = create_input("目标名称", logic.data["target_name"])
     input_date = create_input("目标日期", logic.data["target_date"])
@@ -637,48 +693,45 @@ def main(page: ft.Page):
     input_break = create_input("休息(分)", str(logic.data["break_min"]))
 
     def clear_stats_e(e):
-        logic.clear_daily_stats()
-        txt_tomato_stats.value = "今日投喂: (饿)"
-        page.snack_bar = ft.SnackBar(ft.Text("今日数据已清空，重头再来！"), open=True)
-        page.update()
+        logic.clear_daily_stats(); txt_tomato_stats.value = "今日投喂: (饿)"; page.snack_bar = ft.SnackBar(
+            ft.Text("已清空"), open=True); page.update()
 
     def save_settings(e):
         logic.update_settings(input_name.value, input_date.value, input_city.value, input_focus.value,
                               input_break.value)
         txt_days_label.value = f"距离{input_name.value}仅剩"
-        txt_days_num.value = f"{logic.get_main_days_left()} 天"
+        txt_days_num.value = f"{logic.get_main_days_left()}"
         if not timer_running and not is_break_mode:
             try:
                 mins = int(logic.data["focus_min"])
             except:
                 mins = 25
             txt_timer.value = f"{mins:02}:00"
-            # 重置圆环
             nonlocal total_duration
             total_duration = mins * 60
             ring_timer.value = 1.0
-
-        txt_weather.value = "刷新中..."
+        txt_weather.value = "刷新中...";
         threading.Thread(target=update_weather_thread, daemon=True).start()
-        page.snack_bar = ft.SnackBar(ft.Text("喵！设置保存成功！"), open=True)
+        page.snack_bar = ft.SnackBar(ft.Text("喵！设置保存成功！"), open=True);
         page.update()
 
-    btn_history = ft.ElevatedButton("📜 查看猫猫日记", on_click=show_history_e, bgcolor=THEME["comp_bg"],
-                                    color=THEME["fg"], width=390)
+    btn_history = ft.ElevatedButton("📜 查看猫猫日记", on_click=show_history_e, bgcolor=THEME["white"],
+                                    color=THEME["fg"], width=390, elevation=2)
     btn_clear = ft.TextButton("🗑️ 清空今日投喂", on_click=clear_stats_e, style=ft.ButtonStyle(color=THEME["fg"]))
 
     view_settings = ft.Container(padding=20, content=ft.Column([
         ft.Text("设置 ⚙️", size=24, weight="bold", color=THEME["fg"]),
         ft.Container(height=10), input_name, input_date, input_city, input_focus, input_break,
         ft.Container(height=10),
-        ft.ElevatedButton("保存喵", on_click=save_settings, bgcolor=THEME["comp_bg"], color=THEME["fg"], width=100),
+        ft.ElevatedButton("保存喵", on_click=save_settings, bgcolor=THEME["white"], color=THEME["fg"], width=120,
+                          elevation=2),
         ft.Divider(color=THEME["fg"]), btn_history, ft.Container(height=20),
         ft.Container(content=btn_clear, alignment=ft.alignment.center),
         get_watermark()
     ], scroll="auto"))
 
     def nav_change(e):
-        idx = e.control.selected_index
+        idx = e.control.selected_index;
         page.controls.clear()
         if idx == 0:
             page.add(view_home)
@@ -686,17 +739,24 @@ def main(page: ft.Page):
             page.add(view_todo)
         elif idx == 2:
             page.add(view_settings)
-        page.add(nav_bar)
+        page.add(nav_bar);
         page.update()
 
-    nav_bar = ft.NavigationBar(destinations=[
-        ft.NavigationBarDestination(icon="timer", label="专注"),
-        ft.NavigationBarDestination(icon="list", label="清单"),
-        ft.NavigationBarDestination(icon="settings", label="设置"),
-    ], on_change=nav_change, bgcolor=THEME["comp_bg"], indicator_color=THEME["bg"], selected_index=0)
+    nav_bar = ft.NavigationBar(
+        destinations=[
+            ft.NavigationBarDestination(icon="timer", label="专注"),
+            ft.NavigationBarDestination(icon="list", label="清单"),
+            ft.NavigationBarDestination(icon="settings", label="设置"),
+        ],
+        on_change=nav_change,
+        bgcolor=THEME["white"],
+        indicator_color=THEME["bg"],
+        selected_index=0,
+        elevation=10
+    )
 
-    page.add(view_home)
-    page.add(nav_bar)
+    page.add(view_home);
+    page.add(nav_bar);
     threading.Thread(target=update_weather_thread, daemon=True).start()
 
 
