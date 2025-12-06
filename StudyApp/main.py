@@ -1,4 +1,3 @@
-
 import flet as ft
 import flet_audio
 import json
@@ -8,7 +7,7 @@ import random
 import requests
 import threading
 from datetime import datetime, timedelta
-from plyer import vibrator
+from plyer import vibrator, notification
 
 
 # ==========================================
@@ -25,6 +24,7 @@ class StudyLogic:
             "break_min": 5,
             "tomatoes": 0,
             "tasks": [],
+            "daily_stats": {},
             "countdowns": [],
             "history": [],
             "last_checkin": "",
@@ -36,7 +36,10 @@ class StudyLogic:
         if os.path.exists(self.data_file):
             try:
                 with open(self.data_file, 'r', encoding='utf-8') as f:
-                    self.data.update(json.load(f))
+                    loaded_data = json.load(f)
+                    self.data.update(loaded_data)
+                    if "daily_stats" not in self.data:
+                        self.data["daily_stats"] = {}
             except:
                 pass
 
@@ -72,22 +75,23 @@ class StudyLogic:
             self.data["break_min"] = 5
         self.save_data()
 
-    def add_task(self, text):
+    def add_task(self, text, priority="green"):
         if text:
-            today_str = datetime.now().strftime("%Y-%m-%d")
-            count = 1
-            for t in self.data["tasks"]:
-                if t.startswith(today_str): count += 1
-            decor = random.choice(["🐟", "🧶", "🐁", "📦", "🥛"])
-            self.data["tasks"].append(f"{today_str} {decor} {count}. {text}")
+            task_obj = {
+                "text": text,
+                "priority": priority,
+                "created": datetime.now().strftime("%Y-%m-%d")
+            }
+            self.data["tasks"].append(task_obj)
             self.save_data()
 
     def remove_task(self, index):
         if 0 <= index < len(self.data["tasks"]):
-            task_content = self.data["tasks"][index]
+            task_item = self.data["tasks"][index]
+            content = task_item["text"] if isinstance(task_item, dict) else task_item
             self.data["tasks"].pop(index)
             time_str = datetime.now().strftime("%H:%M")
-            self.data["history"].append(f"[{time_str}] 爪子一挥，完成任务: {task_content}")
+            self.data["history"].append(f"[{time_str}] 爪子一挥，完成: {content}")
             self.save_data()
 
     def add_countdown_event(self, title, date_str):
@@ -109,6 +113,10 @@ class StudyLogic:
 
     def increment_tomato(self):
         self.data["tomatoes"] += 1
+        today = datetime.now().strftime("%Y-%m-%d")
+        if today not in self.data.get("daily_stats", {}):
+            self.data["daily_stats"][today] = 0
+        self.data["daily_stats"][today] += 1
         time_str = datetime.now().strftime("%H:%M")
         self.data["history"].append(f"[{time_str}] 捕获一只番茄 🍅 (嚼嚼嚼)")
         self.save_data()
@@ -161,12 +169,21 @@ class StudyLogic:
         except:
             return "网络线被咬断了..."
 
+    def get_weekly_data(self):
+        stats = []
+        today = datetime.now().date()
+        for i in range(6, -1, -1):
+            day = today - timedelta(days=i)
+            day_str = day.strftime("%Y-%m-%d")
+            count = self.data.get("daily_stats", {}).get(day_str, 0)
+            stats.append({"date": day.strftime("%m-%d"), "count": count, "full_date": day_str})
+        return stats
+
 
 # ==========================================
-# 2. 界面层 (修复 Icons 报错版)
+# 2. 界面层
 # ==========================================
 def main(page: ft.Page):
-    # 窗口设置
     page.window_width = 390
     page.window_height = 844
     page.title = "猫猫专注助手"
@@ -174,9 +191,9 @@ def main(page: ft.Page):
 
     # 🎨 配色方案
     THEME = {
-        "bg": "#FFCCCC",  # 主背景粉色
-        "fg": "#D24D57",  # 字体深红
-        "comp_bg": "#FFF0E6",  # 组件背景
+        "bg": "#FFCCCC",
+        "fg": "#D24D57",
+        "comp_bg": "#FFF0E6",
         "green": "#4CAF50",
         "white": "#FFFFFF",
         "red": "#FF5252",
@@ -194,6 +211,16 @@ def main(page: ft.Page):
     end_timestamp = 0
     total_duration = logic.data["focus_min"] * 60
 
+    # 🎵 BGM 状态
+    bgm_enabled = True
+
+    # 🎵 播放列表 (请确保这些文件在同级目录！)
+    bgm_playlist = [
+        {"name": "卡农", "src": "assets/kanong.mp3"},  # 🔴 加上 assets/
+        # 如果你有其他歌，也记得加上 assets/
+    ]
+    current_bgm_index = 0
+
     emojis = {
         "idle": ["( =ω=)..zzZ", "(=^･ω･^=)", "ฅ(ﾐ・ﻌ・ﾐ)ฅ", "( -ω-)", "₍ ᐢ. ̫ .ᐢ ₎"],
         "work": ["( * >ω<)p", "q(>ω< * )", "φ(．．;)", "(ง •̀_•́)ง", "(=`ω´=)"],
@@ -202,20 +229,143 @@ def main(page: ft.Page):
         "touch": ["(///ω///)", "(=ﾟωﾟ)ﾉ", "(/ω＼)", "Meow~"]
     }
 
-    audio_alarm = flet_audio.Audio(src="alarm.mp3", autoplay=False)
+    # 🔊 音频设置
+    audio_alarm = flet_audio.Audio(src="assets/alarm.mp3", autoplay=False)
+    # 初始化背景音，默认第一首
+    # 直接用字符串 "loop" 就可以解决报错
+    audio_bg = flet_audio.Audio(src=bgm_playlist[0]["src"], autoplay=False, release_mode="loop")
+
     page.overlay.append(audio_alarm)
+    page.overlay.append(audio_bg)
 
     def trigger_vibration():
         try:
-            vibrator.vibrate(1)
+            vibrator.vibrate(2)
         except:
             pass
 
+    def send_notification(title, message):
+        try:
+            notification.notify(title=title, message=message, app_name="猫猫专注", timeout=10)
+        except:
+            pass
+
+    # 🎵 切换 BGM 开关
+    def toggle_bgm(e):
+        nonlocal bgm_enabled
+        bgm_enabled = not bgm_enabled
+
+        if bgm_enabled:
+            btn_bgm.icon = ft.Icons.MUSIC_NOTE
+            btn_bgm.tooltip = "背景音: 开启"
+            # 只有在专注倒计时中才播放
+            if timer_running:
+                try:
+                    audio_bg.play()
+                except:
+                    pass
+        else:
+            btn_bgm.icon = ft.Icons.MUSIC_OFF
+            btn_bgm.tooltip = "背景音: 关闭"
+            try:
+                audio_bg.pause()
+            except:
+                pass
+
+        btn_bgm.update()
+        page.update()
+
+    # 🎵 切换下一首
+    def next_bgm(e):
+        nonlocal current_bgm_index
+        # 1. 计算下一首索引
+        current_bgm_index = (current_bgm_index + 1) % len(bgm_playlist)
+        new_song = bgm_playlist[current_bgm_index]
+
+        # 2. 暂停当前，更新源
+        try:
+            audio_bg.pause()
+        except:
+            pass
+
+        # 更新源文件
+        audio_bg.src = new_song["src"]
+        audio_bg.update()
+
+        # 3. 如果原本就在播放(且开关开启)，则立即播放新歌
+        if bgm_enabled and timer_running:
+            try:
+                audio_bg.play()
+            except:
+                pass
+
+        # 4. 提示
+        page.snack_bar = ft.SnackBar(ft.Text(f"🎵 切换至: {new_song['name']} 🐾"), open=True)
+        page.update()
+
+    def finish_cycle():
+        nonlocal timer_running, is_break_mode, total_duration
+
+        try:
+            audio_bg.pause()
+        except:
+            pass
+
+        try:
+            audio_alarm.seek(0)
+            page.update()
+            audio_alarm.play()
+        except:
+            pass
+
+        trigger_vibration()
+
+        if not is_break_mode:
+            logic.increment_tomato()
+            txt_tomato_stats.value = f"今日渔获: {get_tomato_str()}"
+            is_break_mode = True
+            next_min = logic.data["break_min"]
+            total_duration = next_min * 60
+            txt_timer_title.value = f"☕ 舔毛时间 {next_min} 分钟"
+            txt_timer.color = THEME["green"]
+            ring_timer.color = THEME["green"]
+            btn_start.text = "开始舔毛"
+            btn_start.bgcolor = THEME["green"]
+            btn_start.color = "white"
+            btn_skip.visible = True
+            txt_cat.value = random.choice(emojis["break"])
+            msg = "喵！捕猎完成！该休息啦 (呼噜呼噜~)"
+            page.snack_bar = ft.SnackBar(ft.Text(msg), open=True)
+            send_notification("专注完成", msg)
+        else:
+            is_break_mode = False
+            next_min = logic.data["focus_min"]
+            total_duration = next_min * 60
+            txt_timer_title.value = "准备捕猎"
+            txt_timer.color = THEME["fg"]
+            ring_timer.color = THEME["fg"]
+            btn_start.text = "开始捕猎"
+            btn_start.bgcolor = THEME["white"]
+            btn_start.color = THEME["fg"]
+            btn_skip.visible = False
+            txt_cat.value = random.choice(emojis["idle"])
+            msg = "睡醒了，准备继续抓鱼！"
+            page.snack_bar = ft.SnackBar(ft.Text(msg), open=True)
+            send_notification("休息结束", msg)
+
+        txt_timer.value = f"{next_min:02}:00"
+        ring_timer.value = 1.0
+        timer_running = False
+        page.update()
+
     def handle_lifecycle_change(e):
-        if e.data == "resumed" and timer_running:
+        if timer_running:
             nonlocal end_timestamp
             now = time.time()
             remaining = int(end_timestamp - now)
+            if e.data == "resumed" and remaining <= 0:
+                finish_cycle()
+                return
             if remaining < 0: remaining = 0
             txt_timer.value = f"{remaining // 60:02}:{remaining % 60:02}"
             if total_duration > 0:
@@ -233,14 +383,8 @@ def main(page: ft.Page):
             alignment=ft.alignment.center
         )
 
-    # ==========================
-    # 首页组件
-    # ==========================
-
-    # 1. 天气胶囊
+    # ------------------ 组件区域 ------------------
     txt_weather = ft.Text(value="正在召唤气象喵...", size=11, color=THEME["fg"])
-
-    # 🟢 修复：ft.icons -> ft.Icons (大写)
     weather_icon = ft.Icon(name=ft.Icons.PETS, size=14, color=THEME["fg"])
 
     weather_pill = ft.Container(
@@ -255,16 +399,12 @@ def main(page: ft.Page):
 
     def weather_loop_thread():
         while True:
-            # 获取天气
             w_str = logic.fetch_weather()
             txt_weather.value = w_str
-            # 🟢 修复：ft.icons -> ft.Icons (大写)
             weather_icon.name = random.choice([ft.Icons.PETS, ft.Icons.CLOUD_QUEUE, ft.Icons.WB_SUNNY])
             page.update()
-            # 等待 5 分钟 (300秒)
             time.sleep(300)
 
-    # 2. 签到按钮
     btn_checkin = ft.ElevatedButton(
         text="📅 按爪",
         bgcolor=THEME["white"],
@@ -276,6 +416,24 @@ def main(page: ft.Page):
             shape=ft.RoundedRectangleBorder(radius=20),
             text_style=ft.TextStyle(size=12)
         )
+    )
+
+    # 🎵 开关按钮
+    btn_bgm = ft.IconButton(
+        icon=ft.Icons.MUSIC_NOTE,
+        icon_color=THEME["fg"],
+        icon_size=20,
+        tooltip="白噪音: 开启",
+        on_click=toggle_bgm
+    )
+
+    # 🎵 下一首按钮
+    btn_next_bgm = ft.IconButton(
+        icon=ft.Icons.SKIP_NEXT,
+        icon_color=THEME["fg"],
+        icon_size=20,
+        tooltip="切歌",
+        on_click=next_bgm
     )
 
     def refresh_checkin_ui():
@@ -299,7 +457,6 @@ def main(page: ft.Page):
     btn_checkin.on_click = checkin_click
     refresh_checkin_ui()
 
-    # 3. 倒计时卡片
     txt_days_label = ft.Text(f"距离{logic.data['target_name']}还剩", size=13, color="grey")
     txt_days_num = ft.Text(f"{logic.get_main_days_left()}", size=36, weight="bold", color=THEME["fg"],
                            font_family="Impact")
@@ -317,7 +474,6 @@ def main(page: ft.Page):
         shadow=ft.BoxShadow(spread_radius=1, blur_radius=10, color="#1A000000")
     )
 
-    # 4. 圆环时钟
     txt_timer_title = ft.Text("准备捕猎", size=16, weight="bold", color=THEME["fg"])
     txt_cat = ft.Text(random.choice(emojis["idle"]), size=18, color=THEME["fg"])
     txt_timer = ft.Text(f"{logic.data['focus_min']}:00", size=50, weight="bold", color=THEME["fg"],
@@ -357,7 +513,6 @@ def main(page: ft.Page):
         width=RING_SIZE, height=RING_SIZE
     )
 
-    # 5. 控制按钮
     btn_start = ft.ElevatedButton(
         text="开始捕猎", width=130, height=45,
         style=ft.ButtonStyle(
@@ -383,6 +538,11 @@ def main(page: ft.Page):
         btn_start.bgcolor = THEME["white"]
         btn_skip.visible = False
         txt_cat.value = random.choice(emojis["idle"])
+        # 停止背景音
+        try:
+            audio_bg.pause()
+        except:
+            pass
         page.snack_bar = ft.SnackBar(ft.Text("休息结束，准备出击！"), open=True)
         page.update()
 
@@ -392,7 +552,6 @@ def main(page: ft.Page):
                              elevation=3)
     )
 
-    # 6. 统计区域
     def get_tomato_str():
         t = "🐟 " * min(logic.data["tomatoes"], 6)
         if logic.data["tomatoes"] > 6: t += "..."
@@ -416,7 +575,6 @@ def main(page: ft.Page):
 
     stack_timer_display.controls[2].on_click = pet_the_cat
 
-    # 分享卡片
     def open_share_card(e):
         today_date = datetime.now().strftime("%Y年%m月%d日")
         weekday = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][datetime.now().weekday()]
@@ -434,7 +592,6 @@ def main(page: ft.Page):
                     content=ft.Text(txt_slogan.value, italic=True, text_align="center", color=THEME["fg"], size=14),
                     padding=10),
                 ft.Container(expand=True), ft.Divider(color=THEME["fg"], thickness=1),
-                # 🟢 修复：ft.icons -> ft.Icons
                 ft.Row([ft.Icon(ft.Icons.PETS, color=THEME["fg"], size=20),
                         ft.Text("猫猫专注助手", weight="bold", color=THEME["fg"])], alignment="center")
             ], horizontal_alignment="center"))
@@ -459,10 +616,7 @@ def main(page: ft.Page):
             now = time.time()
             remaining = int(end_timestamp - now)
             if remaining <= 0:
-                remaining = 0
-                txt_timer.value = format_time(remaining)
-                ring_timer.value = 0.0
-                page.update()
+                finish_cycle()
                 break
             txt_timer.value = format_time(remaining)
             if total_duration > 0:
@@ -473,56 +627,20 @@ def main(page: ft.Page):
             page.update()
             time.sleep(0.1)
 
-        if remaining <= 0 and timer_running:
-            timer_running = False
-            try:
-                audio_alarm.seek(0)
-                page.update()
-                audio_alarm.play()
-            except:
-                pass
-            trigger_vibration()
-
-            if not is_break_mode:
-                logic.increment_tomato()
-                txt_tomato_stats.value = f"今日渔获: {get_tomato_str()}"
-                is_break_mode = True
-                next_min = logic.data["break_min"]
-                total_duration = next_min * 60
-                txt_timer_title.value = f"☕ 舔毛时间 {next_min} 分钟"
-                txt_timer.color = THEME["green"]
-                txt_timer.value = f"{next_min:02}:00"
-                ring_timer.color = THEME["green"]
-                ring_timer.value = 1.0
-                btn_start.text = "开始舔毛"
-                btn_start.bgcolor = THEME["green"]
-                btn_start.color = "white"
-                btn_skip.visible = True
-                txt_cat.value = random.choice(emojis["break"])
-                page.snack_bar = ft.SnackBar(ft.Text("喵！捕猎完成！(呼噜呼噜~)"), open=True)
-            else:
-                is_break_mode = False
-                next_min = logic.data["focus_min"]
-                total_duration = next_min * 60
-                txt_timer_title.value = "准备捕猎"
-                txt_timer.color = THEME["fg"]
-                txt_timer.value = f"{next_min:02}:00"
-                ring_timer.color = THEME["fg"]
-                ring_timer.value = 1.0
-                btn_start.text = "开始捕猎"
-                btn_start.bgcolor = THEME["white"]
-                btn_start.color = THEME["fg"]
-                btn_skip.visible = False
-                txt_cat.value = random.choice(emojis["idle"])
-                page.snack_bar = ft.SnackBar(ft.Text("睡醒了，继续抓鱼！"), open=True)
-            page.update()
-
     def toggle_timer(e):
         nonlocal timer_running, end_timestamp, total_duration
         if not timer_running:
             timer_running = True
             btn_start.text = "爪下留情(暂停)"
             txt_cat.value = random.choice(emojis["work"])
+
+            # 🎵 如果开关打开，开始播放
+            if bgm_enabled:
+                try:
+                    audio_bg.play()
+                except:
+                    pass
+
             try:
                 current_display = txt_timer.value.split(":")
                 mins = int(current_display[0])
@@ -542,17 +660,25 @@ def main(page: ft.Page):
             timer_running = False
             btn_start.text = "继续捕猎"
             txt_cat.value = random.choice(emojis["idle"])
+            # ⏸️ 暂停背景音
+            try:
+                audio_bg.pause()
+            except:
+                pass
+
         page.update()
 
     btn_start.on_click = toggle_timer
 
-    # === 布局组装 ===
     view_home = ft.Container(
         padding=ft.padding.only(left=20, right=20, top=10, bottom=160),
         content=ft.Column([
             ft.Row([
                 weather_pill,
                 ft.Container(expand=True),
+                btn_bgm,  # 🎵 BGM开关
+                btn_next_bgm,  # 🎵 下一首
+                ft.Container(width=5),
                 btn_checkin
             ], alignment="spaceBetween"),
             ft.Container(height=10),
@@ -576,9 +702,6 @@ def main(page: ft.Page):
         ], horizontal_alignment="center", scroll="auto")
     )
 
-    # ==========================
-    # 2. 清单页
-    # ==========================
     def show_history_e(e):
         hist_text = "\n".join(reversed(logic.data["history"][-20:]))
         if not hist_text: hist_text = "日记本被老鼠偷走了(空的)..."
@@ -646,9 +769,30 @@ def main(page: ft.Page):
         if not dlg_event_date.value: dlg_event_date.value = datetime.now().strftime("%Y-%m-%d")
         page.open(dlg_add_event)
 
+    priority_map = {"red": THEME["red"], "orange": THEME["orange"], "green": THEME["green"]}
+    current_priority = "green"
+
+    def set_priority(color):
+        nonlocal current_priority
+        current_priority = color
+        for btn in priority_btns.controls:
+            btn.icon = ft.Icons.CIRCLE_OUTLINED
+            if btn.data == color:
+                btn.icon = ft.Icons.CIRCLE
+        page.update()
+
+    priority_btns = ft.Row([
+        ft.IconButton(icon=ft.Icons.CIRCLE_OUTLINED, icon_color=THEME["red"], data="red", tooltip="紧急",
+                      on_click=lambda e: set_priority("red")),
+        ft.IconButton(icon=ft.Icons.CIRCLE_OUTLINED, icon_color=THEME["orange"], data="orange", tooltip="重要",
+                      on_click=lambda e: set_priority("orange")),
+        ft.IconButton(icon=ft.Icons.CIRCLE, icon_color=THEME["green"], data="green", tooltip="日常",
+                      on_click=lambda e: set_priority("green"))
+    ], spacing=0)
+
     lv_tasks = ft.ListView(expand=True, spacing=5)
     txt_input_task = ft.TextField(
-        hint_text="输入待办... (奖励小鱼干)",
+        hint_text="输入待办...",
         expand=True,
         bgcolor=THEME["white"],
         color=THEME["fg"],
@@ -668,14 +812,26 @@ def main(page: ft.Page):
         if not logic.data["tasks"]:
             lv_tasks.controls.append(empty_state)
         else:
-            for i, task_str in enumerate(logic.data["tasks"]):
+            for i, task_item in enumerate(logic.data["tasks"]):
+                if isinstance(task_item, dict):
+                    text = task_item["text"]
+                    prio = task_item.get("priority", "green")
+                else:
+                    text = task_item
+                    prio = "green"
+
+                p_icon = ft.Icon(ft.Icons.CIRCLE, size=12, color=priority_map.get(prio, THEME["green"]))
+                display_content = [p_icon, ft.Text(text, size=14, color=THEME["fg"], expand=True)]
+                if prio == "red":
+                    display_content.insert(1, ft.Text("🔥", size=12))
+
                 lv_tasks.controls.append(
                     ft.Container(
                         bgcolor=THEME["comp_bg"],
                         padding=12,
                         border_radius=8,
                         content=ft.Row([
-                            ft.Text(task_str, size=14, color=THEME["fg"], expand=True),
+                            ft.Row(display_content, expand=True, spacing=10),
                             ft.IconButton(icon="delete_outline", icon_color=THEME["fg"], icon_size=20,
                                           on_click=lambda e, idx=i: delete_task(idx))
                         ])
@@ -684,7 +840,10 @@ def main(page: ft.Page):
         page.update()
 
     def add_task_e(e):
-        if txt_input_task.value: logic.add_task(txt_input_task.value); txt_input_task.value = ""; render_tasks()
+        if txt_input_task.value:
+            logic.add_task(txt_input_task.value, current_priority)
+            txt_input_task.value = ""
+            render_tasks()
 
     def delete_task(idx):
         logic.remove_task(idx);
@@ -707,6 +866,7 @@ def main(page: ft.Page):
             lv_events,
             ft.Divider(color=THEME["fg"], thickness=1, height=30),
             ft.Container(content=lv_tasks, expand=True, bgcolor=THEME["bg"]),
+            ft.Container(content=ft.Row([ft.Text("重要程度:", size=12, color="grey"), priority_btns], alignment="end")),
             ft.Row(
                 [txt_input_task,
                  ft.IconButton("add_circle", icon_color=THEME["fg"], icon_size=40, on_click=add_task_e)]),
@@ -714,9 +874,6 @@ def main(page: ft.Page):
             ft.Container(height=30)
         ]))
 
-    # ==========================
-    # 3. 设置页
-    # ==========================
     def create_input(label, val):
         return ft.TextField(
             label=label, value=val,
@@ -758,6 +915,51 @@ def main(page: ft.Page):
         page.snack_bar = ft.SnackBar(ft.Text("喵！设置保存成功！"), open=True);
         page.update()
 
+    def show_weekly_report(e):
+        stats = logic.get_weekly_data()
+        chart_groups = []
+        for i, day in enumerate(stats):
+            count = day["count"]
+            bar_color = THEME["fg"] if count > 0 else "grey"
+            tooltip = f"{day['full_date']}: {count}条鱼"
+            chart_groups.append(
+                ft.BarChartGroup(
+                    x=i,
+                    bar_rods=[ft.BarChartRod(from_y=0, to_y=count, width=16, color=bar_color, tooltip=tooltip,
+                                             border_radius=4)]
+                )
+            )
+
+        bottom_axis = ft.ChartAxis(
+            labels=[ft.ChartAxisLabel(value=i, label=ft.Text(d["date"], size=10, color="grey")) for i, d in
+                    enumerate(stats)]
+        )
+
+        chart = ft.BarChart(
+            bar_groups=chart_groups,
+            border=ft.border.all(1, "transparent"),
+            left_axis=ft.ChartAxis(labels_size=0, show_labels=False),
+            bottom_axis=bottom_axis,
+            height=200,
+            tooltip_bgcolor=THEME["comp_bg"],
+            max_y=max([x["count"] for x in stats], default=5) + 2
+        )
+
+        content = ft.Column([
+            ft.Text("📊 近7天狩猎周报", size=18, weight="bold", color=THEME["fg"]),
+            ft.Container(height=20),
+            chart,
+            ft.Container(height=10),
+            ft.Text("加油！多抓小鱼干！", size=12, color="grey", italic=True)
+        ], horizontal_alignment="center")
+
+        dlg_chart = ft.AlertDialog(content=ft.Container(content=content, height=300, width=350, padding=10),
+                                   bgcolor="white")
+        page.open(dlg_chart)
+
+    btn_report = ft.ElevatedButton("📊 查看狩猎周报", on_click=show_weekly_report, bgcolor=THEME["comp_bg"],
+                                   color=THEME["fg"], width=390, elevation=0)
+
     btn_history = ft.ElevatedButton("📜 翻看日记本", on_click=show_history_e, bgcolor=THEME["white"],
                                     color=THEME["fg"], width=390, elevation=2)
     btn_clear = ft.TextButton("🗑️ 倒掉今日猫粮(清空数据)", on_click=clear_stats_e,
@@ -772,7 +974,11 @@ def main(page: ft.Page):
             ft.ElevatedButton("保存设置喵", on_click=save_settings, bgcolor=THEME["white"], color=THEME["fg"],
                               width=120,
                               elevation=2),
-            ft.Divider(color=THEME["fg"]), btn_history, ft.Container(height=20),
+            ft.Divider(color=THEME["fg"]),
+            btn_report,
+            ft.Container(height=5),
+            btn_history,
+            ft.Container(height=20),
             ft.Container(content=btn_clear, alignment=ft.alignment.center),
             get_watermark(),
             ft.Container(height=30)
@@ -790,7 +996,6 @@ def main(page: ft.Page):
         page.add(nav_bar);
         page.update()
 
-    # 🟢 修复：ft.icons -> ft.Icons
     nav_bar = ft.NavigationBar(
         destinations=[
             ft.NavigationBarDestination(icon=ft.Icons.TIMER, label="捕猎"),
