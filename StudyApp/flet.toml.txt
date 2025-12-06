@@ -1,0 +1,7 @@
+[flutter]
+# 这里的 input 填你的 main.py 所在的文件夹，如果是根目录就填 "."
+assets_dir = "assets"
+
+[android]
+# 这里是关键，申请唤醒锁权限
+permissions = ["android.permission.WAKE_LOCK"]
