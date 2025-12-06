@@ -211,15 +211,13 @@ def main(page: ft.Page):
     end_timestamp = 0
     total_duration = logic.data["focus_min"] * 60
 
-    # 🎵 BGM 状态
-    bgm_enabled = True
+    # 🎵 BGM 状态 (默认关闭，使用静音保活)
+    bgm_enabled = False
 
-    # 🎵 播放列表 (请确保文件在 assets 文件夹)
+    # 🎵 播放列表 (确保包含 silent.mp3)
     bgm_playlist = [
-        {"name": "呼噜噜", "src": "assets/purr.mp3"},
-        {"name": "窗外雨声", "src": "assets/rain.mp3"},
-        {"name": "森林鸟鸣", "src": "assets/forest.mp3"},
-        {"name": "深夜书房", "src": "assets/night.mp3"},
+        {"name": "卡农", "src": "assets/kanong.mp3"},
+
     ]
     current_bgm_index = 0
 
@@ -231,10 +229,20 @@ def main(page: ft.Page):
         "touch": ["(///ω///)", "(=ﾟωﾟ)ﾉ", "(/ω＼)", "Meow~"]
     }
 
-    # 🔊 音频初始化 (修复 release_mode 报错)
+    # ==========================
+    # 🔊 核心音频组件
+    # ==========================
+
+    # 1. 闹钟 (时间到播放)
     audio_alarm = flet_audio.Audio(src="assets/alarm.mp3", autoplay=False)
-    # 使用 "loop" 字符串而不是 ft.AudioReleaseMode.LOOP
-    audio_bg = flet_audio.Audio(src=bgm_playlist[0]["src"], autoplay=False, release_mode="loop")
+
+    # 2. 背景音 (负责 BGM + 保活)
+    # 默认加载静音文件，循环模式
+    audio_bg = flet_audio.Audio(
+        src="assets/silent.mp3",
+        autoplay=False,
+        release_mode="loop"
+    )
 
     page.overlay.append(audio_alarm)
     page.overlay.append(audio_bg)
@@ -251,33 +259,55 @@ def main(page: ft.Page):
         except:
             pass
 
-    # 🎵 切换 BGM 开关
+    # 🎵 BGM 切换逻辑 (核心保活逻辑)
+    # 如果开启：播放音乐
+    # 如果关闭：播放静音 (Silent)
+    # 关键：不要让播放器停止，否则后台会被杀
     def toggle_bgm(e):
         nonlocal bgm_enabled
         bgm_enabled = not bgm_enabled
 
+        # 先暂停一下，防止切源冲突
+        try:
+            audio_bg.pause()
+        except:
+            pass
+
         if bgm_enabled:
+            # 开启状态：切换到有声歌单
+            audio_bg.src = bgm_playlist[current_bgm_index]["src"]
             btn_bgm.icon = ft.Icons.MUSIC_NOTE
             btn_bgm.tooltip = "背景音: 开启"
-            if timer_running:
-                try:
-                    audio_bg.play()
-                except:
-                    pass
+            page.snack_bar = ft.SnackBar(ft.Text(f"🎵 正在播放: {bgm_playlist[current_bgm_index]['name']}"), open=True)
         else:
+            # 关闭状态：切换到静音文件 (保活关键！)
+            audio_bg.src = "assets/silent.mp3"
             btn_bgm.icon = ft.Icons.MUSIC_OFF
-            btn_bgm.tooltip = "背景音: 关闭"
+            btn_bgm.tooltip = "背景音: 关闭 (静音保活中)"
+            page.snack_bar = ft.SnackBar(ft.Text("🔇 背景音已关 (静音保活中)"), open=True)
+
+        audio_bg.update()
+        btn_bgm.update()
+
+        # 如果当前计时器正在运行，必须立即恢复播放（无论是音乐还是静音）
+        if timer_running:
+            time.sleep(0.1)  # 给音频引擎一点缓冲时间
             try:
-                audio_bg.pause()
+                audio_bg.play()
             except:
                 pass
 
-        btn_bgm.update()
         page.update()
 
     # 🎵 切换下一首
     def next_bgm(e):
         nonlocal current_bgm_index
+        # 只有在开启音乐时才允许切歌，静音模式切歌无意义
+        if not bgm_enabled:
+            page.snack_bar = ft.SnackBar(ft.Text("请先打开背景音开关喵~"), open=True)
+            page.update()
+            return
+
         current_bgm_index = (current_bgm_index + 1) % len(bgm_playlist)
         new_song = bgm_playlist[current_bgm_index]
 
@@ -289,7 +319,8 @@ def main(page: ft.Page):
         audio_bg.src = new_song["src"]
         audio_bg.update()
 
-        if bgm_enabled and timer_running:
+        # 同样，如果计时中，切歌后要立刻播放
+        if timer_running:
             try:
                 audio_bg.play()
             except:
@@ -298,14 +329,17 @@ def main(page: ft.Page):
         page.snack_bar = ft.SnackBar(ft.Text(f"🎵 切换至: {new_song['name']} 🐾"), open=True)
         page.update()
 
+    # ⏱️ 倒计时结束逻辑 (完美衔接)
     def finish_cycle():
         nonlocal timer_running, is_break_mode, total_duration
 
+        # 1. 暂停背景音 (无论是有声还是静音，都要停下来让路给闹钟)
         try:
             audio_bg.pause()
         except:
             pass
 
+        # 2. 播放闹钟 (必响！)
         try:
             audio_alarm.seek(0)
             page.update()
@@ -413,9 +447,9 @@ def main(page: ft.Page):
         )
     )
 
-    # 🎵 开关按钮 (放在单独的控制条)
+    # 🎵 开关按钮 (默认图标显示关闭状态)
     btn_bgm = ft.IconButton(
-        icon=ft.Icons.MUSIC_NOTE,
+        icon=ft.Icons.MUSIC_OFF,
         icon_color=THEME["fg"],
         icon_size=20,
         tooltip="白噪音",
@@ -644,11 +678,11 @@ def main(page: ft.Page):
             txt_cat.value = random.choice(emojis["work"])
 
             # 🎵 如果开关打开，开始播放
-            if bgm_enabled:
-                try:
-                    audio_bg.play()
-                except:
-                    pass
+            # 如果开关关闭，播放静音文件 (保活)
+            try:
+                audio_bg.play()
+            except:
+                pass
 
             try:
                 current_display = txt_timer.value.split(":")
