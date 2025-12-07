@@ -258,7 +258,6 @@ def main(page: ft.Page):
     bgm_ui_enabled = False
     is_shuffle_mode = False
 
-    # ✅ 这里已更新：加入了第 7 首
     bgm_playlist = [
         {"name": "纯音乐 1", "src": "assets/1.mp3"},
         {"name": "纯音乐 2", "src": "assets/2.mp3"},
@@ -621,8 +620,9 @@ def main(page: ft.Page):
     txt_timer = ft.Text(f"{logic.data['focus_min']}:00", size=50, weight="bold", color=THEME["fg"],
                         font_family="Impact")
 
-    RING_SIZE = 230
-    RING_RADIUS = 115
+    # ✅ UI 微调：缩小圆环，节省空间
+    RING_SIZE = 210
+    RING_RADIUS = 105
 
     ring_timer = ft.ProgressRing(
         width=RING_SIZE,
@@ -823,27 +823,31 @@ def main(page: ft.Page):
 
     btn_start.on_click = toggle_timer
 
+    # ✅ 布局优化：收缩间距，上提底部内容
     view_home = ft.Container(
-        padding=ft.padding.only(left=20, right=20, top=60, bottom=100),
+        padding=ft.padding.only(left=20, right=20, top=60, bottom=20),  # 底部padding减小，让内容靠下但不出界
         content=ft.Column([
             ft.Row([
                 weather_pill,
                 ft.Container(expand=True),
                 btn_checkin
             ], alignment="spaceBetween"),
-            ft.Container(height=10),
+            ft.Container(height=5),  # 缩小间距
             music_bar,
-            ft.Container(height=10),
+            ft.Container(height=5),  # 缩小间距
             countdown_card,
-            ft.Container(height=20),
+            ft.Container(height=15),  # 缩小间距
             stack_timer_display,
-            ft.Container(height=20),
+            ft.Container(height=15),  # 缩小间距
             ft.Column([btn_start, ft.Container(height=5), btn_skip], horizontal_alignment="center"),
 
             ft.Container(height=10),
             txt_slogan,
 
-            ft.Container(height=40),
+            # 这里用 Spacer 会更好，会自动挤到最下面，但 Container(expand=True) 也行
+            # 我们手动调整高度：把大间距改小，让它浮上来
+            ft.Container(height=20),
+
             ft.Container(
                 content=ft.Row([txt_tomato_stats, ft.Container(width=10), btn_share],
                                alignment="center", vertical_alignment="center"),
@@ -852,9 +856,9 @@ def main(page: ft.Page):
                 border_radius=10
             ),
 
-            ft.Container(height=20),
+            ft.Container(height=10),
             get_watermark(),
-            ft.Container(height=30)
+            ft.Container(height=10)  # 底部留白
         ], horizontal_alignment="center", scroll="auto")
     )
 
