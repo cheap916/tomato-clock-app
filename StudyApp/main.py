@@ -11,7 +11,7 @@ from plyer import vibrator, notification
 
 
 # ==========================================
-# 1. 逻辑层 (完全保留你的原有逻辑)
+# 1. 逻辑层 (已修复时长累加 & 周报统计)
 # ==========================================
 class StudyLogic:
     def __init__(self):
@@ -23,6 +23,7 @@ class StudyLogic:
             "focus_min": 25,
             "break_min": 5,
             "tomatoes": 0,
+            "today_minutes": 0,  # 新增：今日累计时长
             "tasks": [],
             "daily_stats": {},
             "countdowns": [],
@@ -31,6 +32,20 @@ class StudyLogic:
             "streak_days": 0
         }
         self.load_data()
+
+        # 🐱 猫咪冷知识库
+        self.cat_facts = [
+            "猫咪的耳朵有32块肌肉，能转180度喵！",
+            "猫咪一天要睡12-16个小时，羡慕吧？",
+            "猫咪的肉垫会排汗，是它们唯一的汗腺。",
+            "每只猫的鼻纹都是独一无二的，像指纹一样。",
+            "猫咪尝不出甜味，所以别给朕吃糖！",
+            "猫咪即使从高处落下也能调整姿态安全着陆。",
+            "世界上最长寿的猫活了38岁！",
+            "猫咪呼噜声的频率可以促进骨骼愈合。",
+            "三花猫绝大多数都是女孩子哦。",
+            "猫咪看不清近处的东西，它是大远视眼。",
+        ]
 
     def load_data(self):
         if os.path.exists(self.data_file):
@@ -111,19 +126,42 @@ class StudyLogic:
             self.data["history"].append(f"[{time_str}] 🗑️ 埋掉旧目标: {event['title']}")
             self.save_data()
 
+    # ✅ 修复1：时长累加逻辑
     def increment_tomato(self):
         self.data["tomatoes"] += 1
+
+        # 获取当前专注时长
+        current_min = self.data.get("focus_min", 25)
+
+        # 1. 更新今日累加器 (给分享卡片用的)
+        current_total = self.data.get("today_minutes", 0)
+        self.data["today_minutes"] = current_total + current_min
+
+        # 2. 更新每日统计 (给周报用的)
         today = datetime.now().strftime("%Y-%m-%d")
         if today not in self.data.get("daily_stats", {}):
-            self.data["daily_stats"][today] = 0
-        self.data["daily_stats"][today] += 1
+            self.data["daily_stats"][today] = {"count": 0, "minutes": 0}
+
+        # 兼容旧数据
+        entry = self.data["daily_stats"][today]
+        if isinstance(entry, int):
+            entry = {"count": entry, "minutes": entry * current_min}
+            self.data["daily_stats"][today] = entry
+
+        self.data["daily_stats"][today]["count"] += 1
+        self.data["daily_stats"][today]["minutes"] += current_min
+
         time_str = datetime.now().strftime("%H:%M")
-        self.data["history"].append(f"[{time_str}] 捕获一只番茄 🍅 (嚼嚼嚼)")
+        self.data["history"].insert(0, f"[{time_str}] 🍅 捕获成功 ({current_min}分钟)")
+        if len(self.data["history"]) > 50: self.data["history"].pop()
+
         self.save_data()
         return self.data["tomatoes"]
 
+    # ✅ 修复2：清空逻辑包含时长
     def clear_daily_stats(self):
         self.data["tomatoes"] = 0
+        self.data["today_minutes"] = 0
         self.save_data()
 
     def check_in(self):
@@ -146,15 +184,18 @@ class StudyLogic:
 
     def get_random_quote(self):
         quotes = [
-            "既然上了贼船\n就做个快乐的海盗猫",
-            "与其仰望星空\n不如去抓那只蝴蝶",
-            "哪怕是流浪猫\n也有看夕阳的权利",
-            "保持好奇心\n是猫咪长寿的秘诀",
-            "没有什么烦恼\n是一个罐头解决不了的",
-            "只要步履不停\n小鱼干终将抵达",
-            "现在的努力\n是为了以后能躺平晒太阳"
+            "既然上了贼船，就做个快乐的海盗猫",
+            "与其仰望星空，不如去抓那只蝴蝶",
+            "哪怕是流浪猫，也有看夕阳的权利",
+            "保持好奇心，是猫咪长寿的秘诀",
+            "没有什么烦恼，是一个罐头解决不了的",
+            "只要步履不停，小鱼干终将抵达",
+            "现在的努力，是为了以后能躺平晒太阳"
         ]
         return random.choice(quotes)
+
+    def get_random_fact(self):
+        return random.choice(self.cat_facts)
 
     def fetch_weather(self):
         city = self.data.get("city", "郑州")
@@ -169,19 +210,33 @@ class StudyLogic:
         except:
             return "网络线被咬断了..."
 
+    # ✅ 修复3：周报数据兼容旧格式
     def get_weekly_data(self):
         stats = []
         today = datetime.now().date()
         for i in range(6, -1, -1):
             day = today - timedelta(days=i)
             day_str = day.strftime("%Y-%m-%d")
-            count = self.data.get("daily_stats", {}).get(day_str, 0)
-            stats.append({"date": day.strftime("%m-%d"), "count": count, "full_date": day_str})
+            raw_data = self.data.get("daily_stats", {}).get(day_str, 0)
+
+            if isinstance(raw_data, dict):
+                count = raw_data.get("count", 0)
+                minutes = raw_data.get("minutes", 0)
+            else:
+                count = raw_data
+                minutes = count * self.data.get("focus_min", 25)
+
+            stats.append({
+                "date": day.strftime("%m-%d"),
+                "count": count,
+                "minutes": minutes,
+                "full_date": day_str
+            })
         return stats
 
 
 # ==========================================
-# 2. 界面层 (功能增强版)
+# 2. 界面层 (UI与交互)
 # ==========================================
 def main(page: ft.Page):
     page.window_width = 390
@@ -189,7 +244,6 @@ def main(page: ft.Page):
     page.title = "猫猫专注助手"
     page.theme_mode = ft.ThemeMode.LIGHT
 
-    # 🎨 配色方案
     THEME = {
         "bg": "#FFCCCC",
         "fg": "#D24D57",
@@ -203,7 +257,6 @@ def main(page: ft.Page):
     }
     page.bgcolor = THEME["bg"]
     page.padding = 0
-    # 🌟 屏幕常亮
     page.keep_screen_on = True
 
     logic = StudyLogic()
@@ -211,20 +264,14 @@ def main(page: ft.Page):
     is_break_mode = False
     end_timestamp = 0
     total_duration = logic.data["focus_min"] * 60
+    bgm_ui_enabled = True
 
-    # 🎵 BGM 状态
-    bgm_ui_enabled = True  # UI上显示的开关状态
-
-    # 🎵 播放列表
+    # 🎵 播放列表：kanong.mp3 是背景音
     bgm_playlist = [
-        # 把文件名改成你的 kanong.mp3
-        {"name": "卡农", "src": "assets/kanong.mp3"},
-
-
+        {"name": "卡农(专注)", "src": "assets/kanong.mp3"},
     ]
     current_bgm_index = 0
-    # 【关键】静音文件路径，必须存在
-    SILENCE_SRC = "assets/silence.mp3"
+    SILENCE_SRC = "assets/silent.mp3"
 
     emojis = {
         "idle": ["( =ω=)..zzZ", "(=^･ω･^=)", "ฅ(ﾐ・ﻌ・ﾐ)ฅ", "( -ω-)", "₍ ᐢ. ̫ .ᐢ ₎"],
@@ -234,16 +281,18 @@ def main(page: ft.Page):
         "touch": ["(///ω///)", "(=ﾟωﾟ)ﾉ", "(/ω＼)", "Meow~"]
     }
 
-    # 🔊 音频初始化
-    audio_alarm = flet_audio.Audio(src="assets/alarm.mp3", autoplay=False)
-    # 默认加载第一首
+    # 🔊 音频初始化 (✅ 映射确认)
+    # 1. 闹钟(时间到) -> purr.mp3
+    audio_alarm = flet_audio.Audio(src="assets/purr.mp3", autoplay=False)
+    # 2. 背景音乐 -> kanong.mp3
     audio_bg = flet_audio.Audio(src=bgm_playlist[0]["src"], autoplay=False, release_mode="loop")
+    # 3. 撸猫叫声 -> alarm.mp3
+    audio_meow = flet_audio.Audio(src="assets/alarm.mp3", autoplay=False)
 
-    page.overlay.append(audio_alarm)
-    page.overlay.append(audio_bg)
+    page.overlay.extend([audio_alarm, audio_bg, audio_meow])
 
     # ---------------------------------------------------
-    # 🌙 伪黑屏组件 (保活+省电核心)
+    # 🌙 伪黑屏组件 (✅ 修复：隐藏导航栏)
     # ---------------------------------------------------
     dim_overlay = ft.Container(
         visible=False,
@@ -254,7 +303,6 @@ def main(page: ft.Page):
             ft.Icon(ft.Icons.NIGHTLIGHT_ROUND, color="white", size=40, opacity=0.3),
             ft.Text("\n正在省电保活中...\n点击屏幕唤醒", color="white", opacity=0.3, text_align="center")
         ], alignment="center", horizontal_alignment="center"),
-        # 点击任意位置唤醒
         on_click=lambda e: toggle_dim_mode(False)
     )
     page.overlay.append(dim_overlay)
@@ -266,27 +314,29 @@ def main(page: ft.Page):
                 page.update()
                 return
             dim_overlay.visible = True
+            try:
+                nav_bar.visible = False
+            except:
+                pass
             page.snack_bar = ft.SnackBar(ft.Text("🌙 已进入伪黑屏，请勿按电源键！"), open=True)
         else:
             dim_overlay.visible = False
+            try:
+                nav_bar.visible = True
+            except:
+                pass
         page.update()
 
     # ---------------------------------------------------
-    # 音频控制逻辑 (修改版)
+    # 音频控制逻辑
     # ---------------------------------------------------
-
     def update_bgm_playback():
-        """根据当前状态决定播放什么（音乐还是静音）"""
         audio_bg.pause()
         if bgm_ui_enabled:
-            # 正常播放音乐
             audio_bg.src = bgm_playlist[current_bgm_index]["src"]
         else:
-            # 播放静音文件 (保活关键)
             audio_bg.src = SILENCE_SRC
-
         audio_bg.update()
-        # 只有在计时状态下，才真正开始 "Play"
         if timer_running:
             audio_bg.play()
 
@@ -302,36 +352,28 @@ def main(page: ft.Page):
         except:
             pass
 
-    # 🎵 切换 BGM 开关
     def toggle_bgm(e):
         nonlocal bgm_ui_enabled
         bgm_ui_enabled = not bgm_ui_enabled
-
         if bgm_ui_enabled:
             btn_bgm.icon = ft.Icons.MUSIC_NOTE
             btn_bgm.tooltip = "白噪音: 开启"
         else:
             btn_bgm.icon = ft.Icons.MUSIC_OFF
             btn_bgm.tooltip = "白噪音: 关闭 (静音保活中)"
-
         btn_bgm.update()
-        # 更新播放源
         update_bgm_playback()
         page.update()
 
-    # 🎵 切歌
     def next_bgm(e):
         nonlocal current_bgm_index
         if not bgm_ui_enabled:
             page.snack_bar = ft.SnackBar(ft.Text("先打开音乐喵~"), open=True)
             page.update()
             return
-
         current_bgm_index = (current_bgm_index + 1) % len(bgm_playlist)
         new_song = bgm_playlist[current_bgm_index]
-
         update_bgm_playback()
-
         page.snack_bar = ft.SnackBar(ft.Text(f"🎵 切换至: {new_song['name']} 🐾"), open=True)
         page.update()
 
@@ -339,18 +381,20 @@ def main(page: ft.Page):
     def finish_cycle():
         nonlocal timer_running, is_break_mode, total_duration
 
-        # 唤醒屏幕
         if dim_overlay.visible:
             dim_overlay.visible = False
+            try:
+                nav_bar.visible = True
+            except:
+                pass
             page.update()
 
-        # 停止 BGM
         try:
             audio_bg.pause()
         except:
             pass
 
-        # 播放铃声
+        # 播放闹钟 (purr.mp3)
         try:
             audio_alarm.seek(0)
             page.update()
@@ -366,16 +410,26 @@ def main(page: ft.Page):
             is_break_mode = True
             next_min = logic.data["break_min"]
             total_duration = next_min * 60
-            txt_timer_title.value = f"☕ 舔毛时间 {next_min} 分钟"
+            txt_timer_title.value = f"☕ {next_min}分钟 舔毛时间"
             txt_timer.color = THEME["green"]
             ring_timer.color = THEME["green"]
             btn_start.text = "开始舔毛"
             btn_start.bgcolor = THEME["green"]
             btn_start.color = "white"
             btn_skip.visible = True
+
+            # 休息时显示冷知识
+            fact = logic.get_random_fact()
             txt_cat.value = random.choice(emojis["break"])
-            msg = "喵！捕猎完成！该休息啦 (呼噜呼噜~)"
-            page.snack_bar = ft.SnackBar(ft.Text(msg), open=True)
+
+            dlg_fact = ft.AlertDialog(
+                title=ft.Text("🐱 猫猫冷知识"),
+                content=ft.Text(fact, size=16),
+                bgcolor=THEME["comp_bg"]
+            )
+            page.open(dlg_fact)
+
+            msg = "喵！捕猎完成！休息一下吧~"
             send_notification("专注完成", msg)
         else:
             is_break_mode = False
@@ -428,10 +482,7 @@ def main(page: ft.Page):
     weather_icon = ft.Icon(name=ft.Icons.PETS, size=14, color=THEME["fg"])
 
     weather_pill = ft.Container(
-        content=ft.Row([
-            weather_icon,
-            txt_weather
-        ], alignment="center", spacing=5),
+        content=ft.Row([weather_icon, txt_weather], alignment="center", spacing=5),
         bgcolor="#80FFF0E6",
         padding=ft.padding.symmetric(horizontal=12, vertical=6),
         border_radius=20,
@@ -458,7 +509,6 @@ def main(page: ft.Page):
         )
     )
 
-    # 🎵 音乐控制按钮
     btn_bgm = ft.IconButton(
         icon=ft.Icons.MUSIC_NOTE,
         icon_color=THEME["fg"],
@@ -475,7 +525,6 @@ def main(page: ft.Page):
         on_click=next_bgm
     )
 
-    # 🌙 伪黑屏按钮
     btn_dim = ft.IconButton(
         icon=ft.Icons.NIGHTLIGHT_ROUND,
         icon_color=THEME["fg"],
@@ -484,15 +533,14 @@ def main(page: ft.Page):
         on_click=lambda e: toggle_dim_mode(True)
     )
 
-    # 🎵 音乐控制条 (增加了月亮按钮)
     music_bar = ft.Container(
         content=ft.Row([
             ft.Icon(ft.Icons.MUSIC_NOTE, size=14, color=THEME["fg"]),
             ft.Text("背景音:", size=12, color=THEME["fg"]),
             btn_bgm,
             btn_next_bgm,
-            ft.Container(width=10),  # 间隔
-            btn_dim  # 新增按钮
+            ft.Container(width=10),
+            btn_dim
         ], alignment="center", spacing=0),
         bgcolor="#80FFF0E6",
         padding=ft.padding.symmetric(horizontal=10, vertical=0),
@@ -625,24 +673,45 @@ def main(page: ft.Page):
     txt_slogan = ft.Text(logic.get_random_quote(), italic=True, text_align="center", color=THEME["fg"], size=11,
                          opacity=0.8)
 
+    # ✅ 修复4：撸猫逻辑 - 直接点击就有声音
     def pet_the_cat(e):
         txt_cat.value = random.choice(emojis["touch"])
         txt_cat.color = THEME["orange"]
         txt_cat.update()
         trigger_vibration()
+
+        try:
+            # 尝试倒带播放
+            audio_meow.pause()
+            audio_meow.seek(0)
+            audio_meow.update()
+            audio_meow.play()
+        except:
+            # 失败则直接播放 (First-play protection)
+            try:
+                audio_meow.play()
+            except:
+                pass
+
         page.snack_bar = ft.SnackBar(ft.Text("喵！(蹭蹭)"), open=True, duration=1000)
         page.update()
         time.sleep(0.5)
         txt_cat.color = THEME["fg"]
+        if not timer_running:
+            txt_cat.value = random.choice(emojis["idle"])
         txt_cat.update()
 
     stack_timer_display.controls[2].on_click = pet_the_cat
 
+    # ✅ 修复5：分享卡片使用累加时长
     def open_share_card(e):
         today_date = datetime.now().strftime("%Y年%m月%d日")
         weekday = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][datetime.now().weekday()]
         tomato_count = logic.data["tomatoes"]
-        focus_minutes = tomato_count * logic.data["focus_min"]
+
+        # 优先读取今日累加，否则估算
+        focus_minutes = logic.data.get("today_minutes", tomato_count * logic.data["focus_min"])
+
         poster_content = ft.Container(bgcolor=THEME["card_bg"], padding=30, border_radius=20, width=300, height=450,
                                       border=ft.border.all(4, THEME["fg"]), content=ft.Column([
                 ft.Row([ft.Text(f"{today_date} {weekday}", color="grey", size=14)], alignment="center"),
@@ -679,7 +748,6 @@ def main(page: ft.Page):
             now = time.time()
             remaining = int(end_timestamp - now)
             if remaining <= 0:
-                # 线程安全调用 finish_cycle
                 page.run_task(finish_cycle_wrapper)
                 break
             txt_timer.value = format_time(remaining)
@@ -700,8 +768,6 @@ def main(page: ft.Page):
             timer_running = True
             btn_start.text = "爪下留情(暂停)"
             txt_cat.value = random.choice(emojis["work"])
-
-            # 启动时，无论有声无声，都开始播放音频以保活
             update_bgm_playback()
 
             try:
@@ -732,8 +798,9 @@ def main(page: ft.Page):
 
     btn_start.on_click = toggle_timer
 
+    # ✅ 修复6：UI遮挡修复 (Top Padding 60)
     view_home = ft.Container(
-        padding=ft.padding.only(left=20, right=20, top=10, bottom=160),
+        padding=ft.padding.only(left=20, right=20, top=60, bottom=160),
         content=ft.Column([
             ft.Row([
                 weather_pill,
@@ -741,7 +808,7 @@ def main(page: ft.Page):
                 btn_checkin
             ], alignment="spaceBetween"),
             ft.Container(height=10),
-            music_bar,  # 🎵 音乐条 (包含月亮按钮)
+            music_bar,
             ft.Container(height=10),
             countdown_card,
             ft.Container(height=20),
@@ -913,8 +980,9 @@ def main(page: ft.Page):
     render_events();
     render_tasks()
 
+    # ✅ 修复7：容器 Padding 修正
     view_todo = ft.Container(
-        padding=ft.padding.only(left=20, right=20, top=20, bottom=160),
+        padding=ft.padding.only(left=20, right=20, top=60, bottom=160),
         content=ft.Column([
             ft.Row([
                 ft.Text("鱼干清单 🐟", size=24, weight="bold", color=THEME["fg"]),
@@ -976,13 +1044,15 @@ def main(page: ft.Page):
         page.snack_bar = ft.SnackBar(ft.Text("喵！设置保存成功！"), open=True);
         page.update()
 
+    # ✅ 修复8：周报显示时长 Tooltip
     def show_weekly_report(e):
         stats = logic.get_weekly_data()
         chart_groups = []
         for i, day in enumerate(stats):
             count = day["count"]
+            minutes = day["minutes"]
             bar_color = THEME["fg"] if count > 0 else "grey"
-            tooltip = f"{day['full_date']}: {count}条鱼"
+            tooltip = f"{day['full_date']}: {count}条鱼 ({minutes}分钟)"
             chart_groups.append(
                 ft.BarChartGroup(
                     x=i,
@@ -1027,7 +1097,7 @@ def main(page: ft.Page):
                               style=ft.ButtonStyle(color=THEME["fg"]))
 
     view_settings = ft.Container(
-        padding=ft.padding.only(left=20, right=20, top=20, bottom=160),
+        padding=ft.padding.only(left=20, right=20, top=60, bottom=160),
         content=ft.Column([
             ft.Text("猫窝设置 ⚙️", size=24, weight="bold", color=THEME["fg"]),
             ft.Container(height=10), input_name, input_date, input_city, input_focus, input_break,
